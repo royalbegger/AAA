@@ -1,0 +1,72 @@
+<launch>
+  <arg name="use_sim_time" default="true" />
+  <arg name="gui" default="true" />
+  <arg name="headless" default="false" />
+  
+  <!-- 新增：用于指定世界索引的参数 -->
+  <arg name="world_idx" default="0" />
+  
+  <!-- 新增：Jackal激光配置参数 -->
+  <arg name="front_laser" default="true" />
+  <arg name="default_config" value="front_laser" if="$(arg front_laser)" />
+  <arg name="default_config" value="base" unless="$(arg front_laser)" />
+  <arg name="config" default="$(arg default_config)" />
+  
+  <!-- 新增：Jackal初始位置参数 -->
+  <arg name="init_x" default="-2.25" />
+  <arg name="init_y" default="3" />
+  <arg name="init_z" default="1.0" />
+  <arg name="init_yaw" default="1.57" />
+  
+  <!-- 新增：设置激光相关环境变量 -->
+  <env name="JACKAL_LASER" value="1" />
+  <env name="JACKAL_LASER_MODEL" value="ust10" />
+  <env name="JACKAL_LASER_OFFSET" value="-0.065 0 0.01" />
+
+  <!-- 动态计算世界文件路径 -->
+  <arg name="world_name" value="$(find jackal_helper)/worlds/BARN/world_$(arg world_idx).world" />
+
+  <!-- 动态设置GAZEBO_PLUGIN_PATH：使用group包裹env，支持条件判断，同时转义XML特殊字符 -->
+  <!-- 1. static environment (world_idx < 300) -->
+  <group unless="$(eval arg('world_idx') &gt;= 300)">
+    <env name="GAZEBO_PLUGIN_PATH" value="$(find jackal_helper)/plugins" />
+  </group>
+  
+  <!-- 2. dynamic easy (300-319) -->
+  <group if="$(eval arg('world_idx') &gt;= 300 and arg('world_idx') &lt;= 319)">
+    <env name="GAZEBO_PLUGIN_PATH" value="$(find jackal_helper)/plugins/easy" />
+  </group>
+  
+  <!-- 3. dynamic hard (320-339) -->
+  <group if="$(eval arg('world_idx') &gt;= 320 and arg('world_idx') &lt;= 339)">
+    <env name="GAZEBO_PLUGIN_PATH" value="$(find jackal_helper)/plugins/hard" />
+  </group>
+  
+  <!-- 4. dynamic crazy (340-359) -->
+  <group if="$(eval arg('world_idx') &gt;= 340 and arg('world_idx') &lt;= 359)">
+    <env name="GAZEBO_PLUGIN_PATH" value="$(find jackal_helper)/plugins/crazy" />
+  </group>
+
+  <!-- 启动Gazebo -->
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="debug" value="0" />
+    <arg name="gui" value="$(arg gui)" />
+    <arg name="use_sim_time" value="$(arg use_sim_time)" />
+    <arg name="headless" value="$(arg headless)" />
+    <arg name="world_name" value="$(arg world_name)" />
+  </include>
+
+  <!-- 生成Jackal机器人 -->
+  <include file="$(find jackal_gazebo)/launch/spawn_jackal.launch">
+    <arg name="x" value="$(arg init_x)" />
+    <arg name="y" value="$(arg init_y)" />
+    <arg name="z" value="$(arg init_z)" />
+    <arg name="yaw" value="$(arg init_yaw)" />
+    <arg name="config" value="$(arg config)" />
+    <arg name="joystick" value="false" />
+  </include>
+
+  <!-- 可选：启用碰撞发布节点 -->
+  <!-- <node pkg="jackal_helper" type="collision_publisher_node" name="collision_publisher_node" /> -->
+
+</launch>

@@ -1,0 +1,17 @@
+<launch>
+  <!-- 1. 启动自研 Nav-VFH 节点 -->
+  <node name="nav_vfh" 
+        pkg="navigation_pkg" 
+        type="Nav-VFH1.py" 
+        output="screen"/>
+
+  <!-- 2. 启动 Jackal 的 gmapping 节点组 -->
+  <include file="$(find gmapping_pkg)/launch/gmapping.launch"/>
+
+  <!-- 3. 启动 A* 全局规划器节点组 -->
+  <include file="$(find astar_planner)/launch/astar_planner.launch"/>
+
+  <!-- 4. 启动Riz-->
+  <node pkg="rviz" type="rviz" name="rviz" args="-d $(find navigation_pkg)/rviz/rviz.rviz" />
+
+</launch>

@@ -1,0 +1,52 @@
+EBandPlannerROS:
+
+  # -----------------------------
+  # Global / common
+  # -----------------------------
+  xy_goal_tolerance: 0.25
+  yaw_goal_tolerance: 0.35
+  trans_stopped_vel: 0.1
+  rot_stopped_vel: 0.1
+
+  # -----------------------------
+  # Robot limits
+  # -----------------------------
+  max_vel_lin: 1.0
+  max_vel_th: 1.0
+  min_vel_lin: 0.05
+  min_vel_th: 0.0
+
+  acc_lim_lin: 1.0
+  acc_lim_th: 2.0
+
+  # -----------------------------
+  # Trajectory / optimization
+  # -----------------------------
+  k_prop: 4.0
+  k_damp: 3.5
+  k_rep: 2.0
+
+  differential_drive: true
+  max_acceleration: 1.0
+
+  # -----------------------------
+  # Obstacle handling
+  # -----------------------------
+  obstacle_inflation_radius: 0.4
+  obstacle_cost_exponent: 1.5
+  obstacle_cost_weight: 1.0
+
+  # -----------------------------
+  # Band / discretization
+  # -----------------------------
+  band_width: 0.6
+  bubble_radius: 0.35
+  num_time_steps: 20
+  time_step: 0.1
+
+  # -----------------------------
+  # Controller behaviour
+  # -----------------------------
+  controller_frequency: 10.0
+  auto_resize_band: true
+  prune_plan: true
