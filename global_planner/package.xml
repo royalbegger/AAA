@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>astar_planner</name>
+  <name>global_planner</name>
   <version>0.0.0</version>
   <description>A* path planner for ROS1</description>
   <maintainer email="your_email@example.com">Your Name</maintainer>

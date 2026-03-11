@@ -1,3 +1,4 @@
+#!/home/zoow/miniconda3/envs/barn/bin/python
 import time
 import argparse
 import subprocess
@@ -62,14 +63,14 @@ if __name__ == "__main__":
     elif 320 <= args.world_idx <= 339:  # dynamic hard
         world_name = "DynaBARN/hard/world_%d.world" % (args.world_idx - 320)
         INIT_POSITION = [-9, 0, 3.14]
-        GOAL_POSITION = [18, -4]
+        GOAL_POSITION = [18, 0]
 
 
         rospack = rospkg.RosPack()
         base_path = rospack.get_path('jackal_helper')
         os.environ['GAZEBO_PLUGIN_PATH'] = os.path.join(base_path, "plugins", "hard")
 
-    elif 340 <= args.world_idx <= 359:  # dynamic hard
+    elif 340 <= args.world_idx <= 359:  # dynamic crazy
         world_name = "DynaBARN/crazy/world_%d.world" % (args.world_idx - 340)
         INIT_POSITION = [12, 0, 3.14]
         GOAL_POSITION = [-20, 0]
@@ -122,23 +123,44 @@ if __name__ == "__main__":
 
 
 
-
+ 
     ##########################################################################################
     ## 1. Launch your navigation stack
     ## (Customize this block to add your own navigation stack)
     ##########################################################################################
+    rp = rospkg.RosPack()
+
+    # 1. gmapping
+    # gmapping_path = rp.get_path('jackal_navigation') + '/launch/include/gmapping.launch'
+    # gmapping_process = subprocess.Popen(['roslaunch', gmapping_path])
+
+    # # # 2. astar
+    # astar_path = rp.get_path('astar_planner') + '/launch/astar_planner.launch'
+    # astar_process = subprocess.Popen(['roslaunch', astar_path])
     
-    launch_file = './navigation_pkg/launch/VFH_test.launch'
+    launch_file = './local_planner/launch/VFH_launch.launch'
     nav_stack_process = subprocess.Popen([
         'roslaunch',
         launch_file,
     ])
 
+    # Make sure your navigation stack recives the correct goal position defined in GOAL_POSITION
+    import rospy
+    from geometry_msgs.msg import PoseStamped, Quaternion
+    goal_pub = rospy.Publisher('/move_base_simple/goal', PoseStamped, queue_size=1)
 
+    ps = PoseStamped()
+    ps.header.frame_id = 'map'
+    ps.header.stamp = rospy.Time.now()
+    ps.pose.position.x = GOAL_POSITION[0]
+    ps.pose.position.y = GOAL_POSITION[1]
+    ps.pose.position.z = 0
+    ps.pose.orientation = Quaternion(0, 0, 0, 1)
 
-
-
-
+    # 给订阅端一点准备时间
+    rospy.sleep(5.0)
+    goal_pub.publish(ps)
+    print(">>>>>>>> 已把目标发到 /move_base_simple/goal >>>>>>>>>>")
 
 
     ##########################################################################################
@@ -171,7 +193,10 @@ if __name__ == "__main__":
         while rospy.get_time() - curr_time < 0.1:
             time.sleep(0.01)
 
- ##########################################################################################
+
+    
+    
+    ##########################################################################################
     ## 3. Report metrics and generate log
     ##########################################################################################
     

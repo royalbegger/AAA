@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0.2)
-project(astar_planner)  # 匹配你的包名（从 package.xml）
+project(global_planner)  # 匹配你的包名（从 package.xml）
 
 ## Compile as C++14 (for std::unique_ptr 等)
 ## add_compile_options(-std=c++14)
@@ -30,13 +30,13 @@ include_directories(
 )
 
 ## Declare a C++ executable (包含所有源文件)
-add_executable(astar_planner_node 
+add_executable(global_planner_node 
   src/main.cpp 
   src/astar_planner.cpp  # 添加 AStarPlanner 的实现源文件
 )
 
 ## Specify libraries to link
-target_link_libraries(astar_planner_node
+target_link_libraries(global_planner_node
   ${catkin_LIBRARIES}
   ${Boost_LIBRARIES}
 )
