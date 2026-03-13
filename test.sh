@@ -1,6 +1,9 @@
 #!/bin/bash
-# 循环从0到299的所有序号，每个序号只运行一次
-for n in {4..299} ; do
-    # 执行测试脚本
-    python3 run.py --world_idx $n
+for i in {0..49} ; do
+    n=`expr $i \* 6` # 50 test BARN worlds with equal spacing indices: [0, 6, 12, ..., 294]
+        for j in {1..10} ; do            
+            # run the test
+            python3 run.py --world_idx $n
+            sleep 5
+        done
 done
