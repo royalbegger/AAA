@@ -1,7 +1,7 @@
 <launch>
   <!-- A* Planner Node -->
-  <node name="astar_planner" pkg="astar_planner" type="astar_planner_node" output="screen">
+  <node name="astar_planner" pkg="global_planner" type="global_planner_node" output="screen">
     <!-- Load parameters from YAML file -->
-    <rosparam file="$(find astar_planner)/config/astar_planner_params.yaml" command="load"/>
+    <rosparam file="$(find global_planner)/config/astar_planner_params.yaml" command="load"/>
   </node>
 </launch>
