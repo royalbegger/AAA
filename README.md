@@ -70,36 +70,14 @@ catkin_make
 source devel/setup.bash
 ```
 
-Follow the instruction below to run simulations in Singularity containers.
-
-1. Follow this instruction to install Singularity: https://sylabs.io/guides/3.0/user-guide/installation.html. Singularity version >= 3.6.3 and <= 4.02 is required to successfully build the image!
-
-2. Clone this repo
-```
-git clone https://github.com/royalbegger/AAA.git
-cd AAA
-```
-
-3. Build Singularity image (sudo access required)
-```
-sudo singularity build --notest nav_competition_image.sif Singularityfile.def
-```
 
 ## Run Simulations
-Navigate to the folder of this repo. Below is the example to run move_base with DWA as local planner.
+Navigate to the folder of this repo. 
 
-If you run it on your local machines: (the example below runs [move_base](http://wiki.ros.org/move_base) with DWA local planner in world 0)
+If you run it on your local machines in world 0, and the result will be written in ``AAA/out.txt``
 ```
-source ../../devel/setup.sh
-python3 run.py --world_idx 0
-
+cd AAA
 python3 run.py --world_idx 0 --gui
-
-```
-
-If you run it in a Singularity container:
-```
-./singularity_run.sh /path/to/image/file python3 run.py --world_idx 0
 ```
 
 A successful run should print the episode status (collided/succeeded/timeout) and the time cost in second:
@@ -116,7 +94,16 @@ A successful run should print the episode status (collided/succeeded/timeout) an
 >
 >Navigation timeout with time 100.0000 (s)
 
+## Test and compute score
+In order to test our performance on the 300 static scenes in BARN, use
+```
+./test.sh
+```
 
+In order to test the final score, run it to calculate the average score over the 300 scenes.
+```
+python mean.py --file_name out.txt
+```
 
 ## Acknowledgements
 We would like to express our sincere gratitude to the **RRSL Lab** for open-sourcing their excellent works and providing valuable resources.
