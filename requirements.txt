@@ -1,0 +1,5 @@
+transforms3d>=0.4.2
+scikit-fuzzy>=0.5.0
+scipy>=1.5.4
+packaging>=21.3
+networkx>=2.5.1

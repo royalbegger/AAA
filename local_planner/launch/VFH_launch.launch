@@ -1,0 +1,14 @@
+<launch>
+  <!-- 1. 启动Nav-VFH 节点 -->
+  <node name="nav_vfh" pkg="local_planner" type="Nav-VFH2.py" output="screen"/>
+
+  <!-- 2. 启动 Jackal 的 gmapping 节点组 -->
+  <include file="$(find esdf_mapping)/launch/gmapping.launch"/>
+
+  <!-- 3. 启动 A* 全局规划器节点组 -->
+  <include file="$(find global_planner)/launch/astar_planner.launch"/>
+
+  <!-- 4. 启动Rviz-->
+  <node pkg="rviz" type="rviz" name="rviz" args="-d $(find local_planner)/rviz/rviz.rviz" />
+
+</launch>

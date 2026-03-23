@@ -1,0 +1,12 @@
+<launch>
+
+  <arg name="scan_topic" default="$(eval optenv('JACKAL_LASER_TOPIC', 'front/scan'))" />
+
+  <node pkg="gmapping" type="slam_gmapping" name="slam_gmapping" output="log">
+    <rosparam file="$(find esdf_mapping)/configs/gmapping.yaml" command="load"/>
+    <remap from="scan" to="$(arg scan_topic)"/>
+  </node>
+
+  <!--输出ESDF地图-->
+  <node name="esdf_2d_node" pkg="esdf_mapping" type="esdf_2d_node" output="screen"/>
+</launch>

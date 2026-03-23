@@ -1,0 +1,15 @@
+# A* Planner Parameters for ROS1
+# File: astar_planner_params.yaml
+# Load this via <rosparam file="$(find astar)/config/astar_planner_params.yaml" command="load"/> in launch file
+
+# Core Planning Parameters
+cost_threshold: 85  # Cost threshold for occupancy (0-100)
+use_diagonal_movement: true  # Allow diagonal moves in A* (8-connected grid)
+robot_base_frame: "base_link"  # Robot's base frame for TF
+global_frame: "map"  # Global frame for planning (e.g., map)
+planning_frequency: 2.0  # Path replanning frequency (Hz)
+
+# Vehicle Footprint Parameters
+vehicle_width: 0.3  # Vehicle width in meters
+vehicle_length: 0.35  # Vehicle length in meters
+footprint_padding: 0  # Safety padding in grid cells around footprint
