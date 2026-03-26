@@ -7,18 +7,21 @@ project(global_planner)  # 匹配你的包名（从 package.xml）
 ## Find catkin macros and libraries
 find_package(catkin REQUIRED COMPONENTS
   roscpp
+  rospy
   tf
   nav_msgs
   geometry_msgs
   std_msgs
 )
 
+catkin_python_setup()
+
 find_package(Boost REQUIRED COMPONENTS system)
 
 ## Declare catkin package
 catkin_package(
   INCLUDE_DIRS include
-  CATKIN_DEPENDS roscpp tf nav_msgs geometry_msgs std_msgs
+  CATKIN_DEPENDS roscpp rospy tf nav_msgs geometry_msgs std_msgs
   DEPENDS Boost
 )
 
@@ -39,4 +42,9 @@ add_executable(astar_planner_node
 target_link_libraries(astar_planner_node
   ${catkin_LIBRARIES}
   ${Boost_LIBRARIES}
+)
+
+catkin_install_python(PROGRAMS
+  scripts/path_smoother_node
+  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )

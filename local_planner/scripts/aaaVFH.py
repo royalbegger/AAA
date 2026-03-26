@@ -369,17 +369,7 @@ class NavigationNode:
             distance_to_goal = math.hypot(
                 self.target_absolute_position[0] - self.current_position[0],
                 self.target_absolute_position[1] - self.current_position[1])
-            # if distance_to_goal < 0.2:
-            #     # rospy.loginfo("Goal reached! Waiting for next RViz click…")
-            #     twist = Twist()
-            #     self.cmd_vel_pub.publish(twist)
-            #     self.is_distance_to_goal = True
-            #     # rospy.loginfo(f"???")
-            #     # 到达后清空 goal，等待下一次点击
-            #     self.goal = None
-            #     self.target_absolute_position = None
-            #     rate.sleep()
-            #     continue
+
 
             # VFH functions
             m = calcDanger(self.processed_lidar_ranges, self.max_range)
@@ -457,7 +447,7 @@ class NavigationNode:
         
             # rospy.loginfo("[Safety Check] target_heading: %.1f°, current_heading: %.1f°, heading_diff: %.1f°", target_heading_deg, self.current_heading, heading_diff_deg)
             
-            if heading_diff_deg > 45.0:
+            if heading_diff_deg > 42.0:
                 # rospy.logwarn("[Safety Check] Heading diff %.1f° > 60°, performing in-place rotation", heading_diff_deg)
                 
                 # 停止前进，原地旋转对准目标

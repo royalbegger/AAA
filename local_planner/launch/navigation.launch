@@ -1,6 +1,9 @@
 <launch>
   <!-- 1. 启动Nav-VFH 节点 -->
-  <node name="nav_vfh" pkg="local_planner" type="Nav-VFH2.py" output="screen"/>
+  <node name="nav_vfh" pkg="local_planner" type="aaaVFH.py" output="screen"/>
+
+  <!-- 2. 启动 mapping 节点 -->
+  <include file="$(find aaamapping)/launch/aaamapping.launch"/>
 
   <!-- 2. 启动 Jackal 的 gmapping 节点组 -->
   <include file="$(find esdf_mapping)/launch/gmapping.launch"/>
