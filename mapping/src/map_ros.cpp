@@ -32,7 +32,7 @@ bool MapRosNode::init()
   pnh_.param<std::string>("obstacle_layer_topic", obstacle_layer_topic_, "/map_layers/obstacle");
   pnh_.param<std::string>("unknown_layer_topic", unknown_layer_topic_, "/map_layers/unknown");
   pnh_.param<std::string>("goal_layer_topic", goal_layer_topic_, "/map_layers/goal");
-  pnh_.param<std::string>("fused_map_topic", fused_map_topic_, "/esdf_map");
+  pnh_.param<std::string>("fused_map_topic", fused_map_topic_, "/fusion_map");
   pnh_.param<double>("process_rate", process_rate_, 10.0);
 
   // subscribers
