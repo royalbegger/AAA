@@ -16,5 +16,5 @@
   </node>
 
   <!--输出ESDF地图-->
-  <!-- <node name="esdf_2d_node" pkg="esdf_mapping" type="esdf_2d_node" output="screen"/> -->
+  <node name="esdf_2d_node" pkg="esdf_mapping" type="esdf_2d_node" output="screen"/>
 </launch>
