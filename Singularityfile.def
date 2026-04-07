@@ -1,0 +1,77 @@
+Bootstrap: docker
+From: ros:noetic
+
+%setup
+    mkdir -p ${SINGULARITY_ROOTFS}/jackal_ws/src
+
+%files
+    . /jackal_ws/src/AAA
+
+%post -c /bin/bash
+    # Update and install core dependencies
+    apt-get update && apt-get install -y \
+        python3-venv \
+        protobuf-compiler \
+        libprotobuf-dev \
+        libgazebo9-dev \
+        # ROS noetic navigation stack (includes move_base_msgs)
+        ros-noetic-navigation \
+        ros-noetic-move-base-msgs \
+        # Other ROS packages
+        ros-noetic-gazebo-msgs \
+        ros-noetic-gazebo-ros \
+        ros-noetic-gazebo-ros-control \
+        ros-noetic-xacro \
+        ros-noetic-sick-tim \
+        ros-noetic-lms1xx \
+        ros-noetic-velodyne-description \
+        ros-noetic-pointgrey-camera-description \
+        ros-noetic-ros-control \
+        ros-noetic-robot-localization \
+        ros-noetic-twist-mux \
+        ros-noetic-interactive-marker-twist-server \
+        ros-noetic-ros-controllers \
+        # Additional tools
+        wget \
+        git \
+        python3-pip
+
+    # Create and activate Python virtual environment
+    python3 -m venv /venv
+    . /venv/bin/activate
+    pip3 install --upgrade pip
+    pip3 install \
+        defusedxml \
+        rospkg \
+        netifaces \
+        numpy \
+        transforms3d>=0.4.2 \
+        scikit-fuzzy>=0.5.0 \
+        scipy>=1.5.4 \
+        packaging>=21.3 \
+        networkx>=2.5.1
+
+    # Clone Jackal repositories
+    cd /jackal_ws/src
+    git clone https://github.com/jackal/jackal.git --branch noetic-devel
+    git clone https://github.com/jackal/jackal_simulator.git --branch noetic-devel
+    git clone https://github.com/jackal/jackal_desktop.git --branch noetic-devel
+
+    # Initialize ROS workspace
+    source /opt/ros/noetic/setup.bash
+    cd /jackal_ws
+    rosdep init && rosdep update
+    rosdep install -y --from-paths src --ignore-src --rosdistro noetic
+
+    # Build the workspace
+    catkin_make
+
+    # Ensure Gazebo models are accessible
+    mkdir -p /root/.gazebo/models
+    echo "export GAZEBO_MODEL_PATH=/jackal_ws/src/the-barn-challenge/models:\$GAZEBO_MODEL_PATH" >> $SINGULARITY_ENVIRONMENT
+
+%environment
+    export PATH="/venv/bin:$PATH"
+    export ROS_PACKAGE_PATH="/jackal_ws/src:$ROS_PACKAGE_PATH"
+    source /opt/ros/noetic/setup.bash
+    source /jackal_ws/devel/setup.bash
