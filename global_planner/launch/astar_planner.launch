@@ -4,4 +4,13 @@
     <!-- Load parameters from YAML file -->
     <rosparam file="$(find global_planner)/config/astar_planner_params.yaml" command="load"/>
   </node>
+
+  <!-- <node name="path_smoother_node" pkg="global_planner" type="path_smoother_node" output="screen">
+    <param name="input_topic" value="/path"/>
+    <param name="output_topic" value="/smooth_path"/>
+    <param name="kernel_size" value="51"/>
+    <param name="num_scale" value="10"/>
+    <param name="sigma" value="1.2"/>
+    <param name="min_points" value="2"/>
+  </node> -->
 </launch>

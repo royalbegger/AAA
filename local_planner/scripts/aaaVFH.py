@@ -71,7 +71,7 @@ class NavigationNode:
         self.last_nearest_idx = 0                 # 上次找到的最近点索引，用于加速搜索
 
         self.cmd_vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
-        self.lidar_sub = rospy.Subscriber('/front/scan', LaserScan, self.lidar_callback)
+        self.lidar_sub = rospy.Subscriber('/front/scan_preprocessed', LaserScan, self.lidar_callback)
         self.tf_buffer = tf2_ros.Buffer()  # 存储TF变换的缓冲区
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)  # 监听TF
         self.timer = rospy.Timer(rospy.Duration(0.1), self.tf_callback)
@@ -194,7 +194,7 @@ class NavigationNode:
     def init_fuzzy_controllers(self):
         # --- Linear Velocity Fuzzy Controller ---
         if self.environment_mode == 'static':
-            lin_vel_max = 0.9
+            lin_vel_max = 0.75
             linear_velocity = ctrl.Consequent(np.arange(0, lin_vel_max + 0.01, 0.01), 'Linear_Velocity')
             scale = 1.25
             linear_velocity['Very_Low']  = fuzz.trimf(linear_velocity.universe, [-0.175 * scale, 0, 0.175 * scale])
@@ -369,17 +369,7 @@ class NavigationNode:
             distance_to_goal = math.hypot(
                 self.target_absolute_position[0] - self.current_position[0],
                 self.target_absolute_position[1] - self.current_position[1])
-            # if distance_to_goal < 0.2:
-            #     # rospy.loginfo("Goal reached! Waiting for next RViz click…")
-            #     twist = Twist()
-            #     self.cmd_vel_pub.publish(twist)
-            #     self.is_distance_to_goal = True
-            #     # rospy.loginfo(f"???")
-            #     # 到达后清空 goal，等待下一次点击
-            #     self.goal = None
-            #     self.target_absolute_position = None
-            #     rate.sleep()
-            #     continue
+
 
             # VFH functions
             m = calcDanger(self.processed_lidar_ranges, self.max_range)
@@ -457,22 +447,50 @@ class NavigationNode:
         
             # rospy.loginfo("[Safety Check] target_heading: %.1f°, current_heading: %.1f°, heading_diff: %.1f°", target_heading_deg, self.current_heading, heading_diff_deg)
             
-            if heading_diff_deg > 45.0:
-                # rospy.logwarn("[Safety Check] Heading diff %.1f° > 60°, performing in-place rotation", heading_diff_deg)
+            # if heading_diff_deg > 45.0:
+            #     # rospy.logwarn("[Safety Check] Heading diff %.1f° > 60°, performing in-place rotation", heading_diff_deg)
                 
-                # 停止前进，原地旋转对准目标
-                twist.linear.x = 0.0
+            #     # 停止前进，原地旋转对准目标
+            #     twist.linear.x = 0.0
                 
-                # 根据夹角符号判断转向方向（使用未取绝对值的heading_diff）
-                heading_diff_raw = target_heading_deg - self.current_heading
-                heading_diff_raw = (heading_diff_raw + 180) % 360 - 180
+            #     # 根据夹角符号判断转向方向（使用未取绝对值的heading_diff）
+            #     heading_diff_raw = target_heading_deg - self.current_heading
+            #     heading_diff_raw = (heading_diff_raw + 180) % 360 - 180
                 
-                if heading_diff_raw > 0:
-                    twist.angular.z = 1.0
-                    rospy.loginfo("[Safety Check] Rotating LEFT to target")
+            #     if heading_diff_raw > 0:
+            #         twist.angular.z = 1.0
+            #         rospy.loginfo("[Safety Check] Rotating LEFT to target")
+            #     else:
+            #         twist.angular.z = -1.0
+            #         rospy.loginfo("[Safety Check] Rotating RIGHT to target")
+            # ... 前面的代码计算 heading_diff_deg 等 ...
+            
+            # 定义旋转安全距离（米）
+            ROTATION_SAFE_DIST = 0.4   # 可根据实际车体尺寸调整
+            # 检查旋转是否安全：所有激光雷达距离是否都大于安全距离
+            if heading_diff_deg > 46.0:
+                # 获取所有距离值（self.processed_lidar_ranges 是已处理过的数组，长度通常为720）
+                min_dist_all = np.min(self.processed_lidar_ranges)
+                if min_dist_all > ROTATION_SAFE_DIST:
+                    # 安全：原地旋转
+                    twist.linear.x = 0.0
+                    # 判断旋转方向
+                    heading_diff_raw = target_heading_deg - self.current_heading
+                    heading_diff_raw = (heading_diff_raw + 180) % 360 - 180
+                    if heading_diff_raw > 0:
+                        twist.angular.z = 1.0   # 向左转（正角速度）
+                        rospy.loginfo_throttle(1.0, "Rotating LEFT (safe, min_dist=%.2f)", min_dist_all)
+                    else:
+                        twist.angular.z = -1.0  # 向右转
+                        rospy.loginfo_throttle(1.0, "Rotating RIGHT (safe, min_dist=%.2f)", min_dist_all)
                 else:
-                    twist.angular.z = -1.0
-                    rospy.loginfo("[Safety Check] Rotating RIGHT to target")
+                    # 不安全：不旋转，改为后退或停止，等待环境变安全
+                    rospy.logwarn_throttle(1.0, "Rotation blocked by obstacle (min_dist=%.2f < %.2f)", min_dist_all, ROTATION_SAFE_DIST)
+                    twist.linear.x = -0.2   # 缓慢后退
+                    twist.angular.z = 0.0
+            else:
+                # 正常前进的逻辑（已有）
+                pass
             self.cmd_vel_pub.publish(twist)
             rate.sleep()
 

@@ -207,7 +207,7 @@ Visualization Manager:
       Size (Pixels): 3
       Size (m): 0.029999999329447746
       Style: Flat Squares
-      Topic: /front/scan
+      Topic: /front/scan_preprocessed
       Unreliable: false
       Use Fixed Frame: true
       Use rainbow: true
@@ -217,7 +217,7 @@ Visualization Manager:
       Marker Topic: /lookahead_target_marker
       Name: Marker
       Namespaces:
-        lookahead: true
+        {}
       Queue Size: 100
       Value: true
   Enabled: true

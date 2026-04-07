@@ -10,6 +10,14 @@ public:
     ESDF2D()
     {
         ros::NodeHandle nh;
+        ros::NodeHandle pnh("~");
+        // 未知区域衰减参数
+        pnh.param<double>("unknown_decay_factor", unknown_decay_factor_, 0.8);
+        pnh.param<int>("unknown_decay_offset", unknown_decay_offset_, 0);
+        // 确保衰减因子在 (0,1] 范围内
+        if (unknown_decay_factor_ <= 0.0) unknown_decay_factor_ = 0.1;
+        if (unknown_decay_factor_ > 1.0) unknown_decay_factor_ = 1.0;
+
         map_sub_ = nh.subscribe("/map", 1, &ESDF2D::mapCallback, this);
         esdf_pub_ = nh.advertise<nav_msgs::OccupancyGrid>("/esdf_map", 1);
     }
@@ -18,11 +26,10 @@ private:
     ros::Subscriber map_sub_;
     ros::Publisher esdf_pub_;
     const float INF = 1e8;
+    double unknown_decay_factor_;
+    int unknown_decay_offset_;
 
     // ----------------- 1D Squared Distance Transform -----------------
-    //实现了高效的Felzenszwalb算法（线性时间算法）     
-    //输入：一维数组f，其中f[i]是原始距离（障碍物为0，其他为INF）
-    //输出：一维数组d，其中d[i]是到最近障碍物的平方距离
     void distanceTransform1D(
         const std::vector<float>& f,
         std::vector<float>& d,
@@ -69,7 +76,7 @@ private:
         // 初始化所有栅格为极大值（INF = 1e8）
         std::vector<float> grid(W * H, INF);
 
-        //Step 1: 初始化障碍
+        // Step 1: 初始化障碍物（保留原代码中的边界裁剪逻辑，但可能只适用于特定场景）
         int Changing_Flag = 0;
         int value = 100;
         int x1 = 0;
@@ -104,23 +111,18 @@ private:
                     grid[idx] = 0.0f;   
                 else 
                     if(occ == 100 )
-                        // 障碍物位置距离设为0
                         grid[idx] = 0.0f;              
             }
         }
 
-        // Step 2: X 方向 EDT X方向距离变换
+        // Step 2: X 方向 EDT
         std::vector<float> temp(W * H, INF);
         for (int y = 0; y < H; y++)
         {
-            // 提取当前行的距离值
             std::vector<float> f(W), d(W);
             for (int x = 0; x < W; x++)
                 f[x] = grid[y * W + x];
-
-            // 执行一维距离变换
             distanceTransform1D(f, d, W);
-
             for (int x = 0; x < W; x++)
                 temp[y * W + x] = d[x];
         }
@@ -129,42 +131,48 @@ private:
         std::vector<float> dist(W * H, INF);
         for (int x = 0; x < W; x++)
         {
-            // 提取当前列的距离值（来自X方向变换结果）
             std::vector<float> f(H), d(H);
             for (int y = 0; y < H; y++)
                 f[y] = temp[y * W + x];
-
-            // 执行一维距离变换
             distanceTransform1D(f, d, H);
-
             for (int y = 0; y < H; y++)
-                // 计算实际欧几里得距离 = sqrt(distance²) * 分辨率
                 dist[y * W + x] = std::sqrt(d[y]) * res;
         }
 
-        // Step 4: 输出 ESDF OccupancyGrid
+        // Step 4: 输出 ESDF OccupancyGrid，并对未知区域进行衰减
         nav_msgs::OccupancyGrid esdf;
         esdf.header = map->header;
         esdf.info = map->info;
         esdf.data.resize(W * H);
         const float D_MAX = 1.0; // 最大有效距离
         for (int i = 0; i < W * H; i++)
-        {                // obstacle
-            if(grid[i] == 0.0f)
-                esdf.data[i] = 100;
+        {
+            int8_t value;
+            // 障碍物区域（grid[i]==0.0f 表示障碍物或边界裁剪区域）
+            if (grid[i] == 0.0f)
+            {
+                value = 100;
+            }
             else
             {
-                float d = std::min(dist[i], D_MAX); // 截断
-                if (d <= D_MAX)
-                {
-                    esdf.data[i] = static_cast<int8_t>( (1 - d / D_MAX) * 100 );
-                }
-                else 
-                {
-                    esdf.data[i] = 0;
-                }
-
+                float d = std::min(dist[i], D_MAX);
+                value = static_cast<int8_t>((1 - d / D_MAX) * 100);
             }
+
+            // 如果是未知区域，应用衰减
+            if (map->data[i] == -1)
+            {
+                // 先衰减（乘法）
+                double decayed = static_cast<double>(value) * unknown_decay_factor_;
+                // 再叠加偏移（可选）
+                decayed += unknown_decay_offset_;
+                // 限制在 0~100 之间
+                if (decayed > 100.0) decayed = 100.0;
+                if (decayed < 0.0) decayed = 0.0;
+                value = static_cast<int8_t>(decayed);
+            }
+
+            esdf.data[i] = value;
         }
 
         esdf_pub_.publish(esdf);

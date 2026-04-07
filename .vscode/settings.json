@@ -1,0 +1,13 @@
+{
+    "ros.distro": "noetic",
+    "python.autoComplete.extraPaths": [
+        "/home/lsl/AAA/devel/lib/python3/dist-packages",
+        "/opt/ros/noetic/lib/python3/dist-packages",
+        "/home/lsl/Interactive-Nav-SG-nav/GLIP"
+    ],
+    "python.analysis.extraPaths": [
+        "/home/lsl/AAA/devel/lib/python3/dist-packages",
+        "/opt/ros/noetic/lib/python3/dist-packages",
+        "/home/lsl/Interactive-Nav-SG-nav/GLIP"
+    ]
+}

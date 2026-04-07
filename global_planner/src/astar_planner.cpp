@@ -54,9 +54,13 @@ AStarPlanner::AStarPlanner() :
     nh_.param("vehicle_length", vehicle_length_, 0.8);
     nh_.param("footprint_padding", footprint_padding_, 1);
     
+    // 订阅话题名称
+    std::string costmap_topic;
+    nh_.param<std::string>("costmap_topic", costmap_topic, "/esdf_map");
+
     // 创建订阅者 - 订阅静态地图
     costmap_sub_ = nh_.subscribe<nav_msgs::OccupancyGrid>(
-        "/esdf_map", 10, &AStarPlanner::costmapCallback, this);
+        costmap_topic, 10, &AStarPlanner::costmapCallback, this);
     
     // 订阅rviz的2D Nav Goal（修正为标准主题）
     goal_sub_ = nh_.subscribe<geometry_msgs::PoseStamped>(
@@ -77,7 +81,7 @@ AStarPlanner::AStarPlanner() :
     
     ROS_INFO("A* Planner initialized");
     ROS_INFO("Listening to:");
-    ROS_INFO("  - Static map: /esdf_map");
+    ROS_INFO("  - Static map: %s", costmap_topic.c_str());
     ROS_INFO("  - Goal from rviz: /move_base_simple/goal");
     ROS_INFO("  - Robot pose via TF: %s -> %s", global_frame_.c_str(), robot_base_frame_.c_str());
     ROS_INFO("Cost threshold: %.1f", cost_threshold_);
@@ -175,24 +179,7 @@ void AStarPlanner::planningTimerCallback(const ros::TimerEvent& event)
     }
 }
 
-// 检查当前路径是否与地图发生碰撞
-// bool AStarPlanner::checkPathCollision()
-// {
-//     if (current_path.empty() || costmap_.data.empty()) {
-//         return true; // 没有路径或地图时认为有碰撞
-//     }
-    
-//     for (const auto& node : current_path) {
-//         // 检查路径上每个点是否有碰撞
-//         if (checkCollision(node.x, node.y)) {
-//             ROS_DEBUG("Collision detected at path point: grid(%d, %d)", 
-//                     node.x, node.y);
-//             return true;
-//         }
-//     }
-    
-//     return false; // 路径无碰撞
-// }
+//检查当前路径是否与地图发生碰撞
 bool AStarPlanner::checkPathCollision()
 {
     // 边界条件：无路径或无地图，直接判定有碰撞
@@ -345,6 +332,7 @@ void AStarPlanner::performPathPlanning()
                  goal_grid.first, goal_grid.second, duration.count());
     }
 }
+
 
 geometry_msgs::PoseStamped AStarPlanner::getCurrentPose()
 {

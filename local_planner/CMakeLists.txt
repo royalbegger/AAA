@@ -162,9 +162,7 @@ include_directories(
 ## Mark executable scripts (Python etc.) for installation
 ## in contrast to setup.py, you can choose the destination
   catkin_install_python(PROGRAMS
-    scripts/Nav-VFH.py
-    scripts/Nav-VFH1.py 
-    scripts/Nav-VFH2.py 
+    scripts/aaaVFH.py 
     DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
   )
 
