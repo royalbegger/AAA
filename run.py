@@ -41,21 +41,58 @@ if __name__ == "__main__":
     os.environ["JACKAL_LASER_MODEL"] = "ust10"
     os.environ["JACKAL_LASER_OFFSET"] = "-0.065 0 0.01"
     
-    if args.world_idx < 300:  # static environment from 0-299
-        world_name = "BARN/world_%d.world" %(args.world_idx)
-        INIT_POSITION = [-2.25, 3, 1.57]  # in world frame
+    # if args.world_idx < 300:  # static environment from 0-299
+    #     world_name = "BARN/world_%d.world" %(args.world_idx)
+    #     INIT_POSITION = [-2.25, 3, 1.57]  # in world frame
+    #     GOAL_POSITION = [0, 10]  # relative to the initial position
+    # elif args.world_idx < 360:  # Dynamic environment from 300-359
+    #     world_name = "DynaBARN/easy/world_%d.world" %(args.world_idx - 300)
+    #     INIT_POSITION = [11, 0, 3.14]  # in world frame
+    #     GOAL_POSITION = [-20, 0]  # relative to the initial position
+    # else:
+    #     raise ValueError("World index %d does not exist" %args.world_idx)
+
+    if args.world_idx < 300:  # static environment
+        world_name = "BARN/world_%d.world" % args.world_idx
+        INIT_POSITION = [-2, 3, 1.57]  # in world frame
         GOAL_POSITION = [0, 10]  # relative to the initial position
-    elif args.world_idx < 360:  # Dynamic environment from 300-359
-        world_name = "DynaBARN/world_%d.world" %(args.world_idx - 300)
-        INIT_POSITION = [11, 0, 3.14]  # in world frame
-        GOAL_POSITION = [-20, 0]  # relative to the initial position
+
+        rospack = rospkg.RosPack()
+        base_path = rospack.get_path('jackal_helper')
+        os.environ['GAZEBO_PLUGIN_PATH'] = os.path.join(base_path, "plugins")
+
+    elif 300 <= args.world_idx <= 319:  # dynamic easy
+        world_name = "DynaBARN/easy/world_%d.world" % (args.world_idx - 300)
+        INIT_POSITION = [12, 0, 3.14]
+        GOAL_POSITION = [-9, 0]
+
+        rospack = rospkg.RosPack()
+        base_path = rospack.get_path('jackal_helper')
+        os.environ['GAZEBO_PLUGIN_PATH'] = os.path.join(base_path, "plugins", "easy")
+
+    elif 320 <= args.world_idx <= 339:  # dynamic hard
+        world_name = "DynaBARN/hard/world_%d.world" % (args.world_idx - 320)
+        INIT_POSITION = [-9, 0, 1.57]
+        GOAL_POSITION = [18, 0]
+
+        rospack = rospkg.RosPack()
+        base_path = rospack.get_path('jackal_helper')
+        os.environ['GAZEBO_PLUGIN_PATH'] = os.path.join(base_path, "plugins", "hard")
+
+    elif 340 <= args.world_idx <= 359:  # dynamic hard
+        world_name = "DynaBARN/crazy/world_%d.world" % (args.world_idx - 340)
+        INIT_POSITION = [12, 0, 1.57]
+        GOAL_POSITION = [-20, 0]
+
+
+        rospack = rospkg.RosPack()
+        base_path = rospack.get_path('jackal_helper')
+        os.environ['GAZEBO_PLUGIN_PATH'] = os.path.join(base_path, "plugins", "crazy")
+
     else:
-        raise ValueError("World index %d does not exist" %args.world_idx)
+        raise ValueError("World index %d does not exist" % args.world_idx)
     
     print(">>>>>>>>>>>>>>>>>> Loading Gazebo Simulation with %s <<<<<<<<<<<<<<<<<<" %(world_name))   
-    rospack = rospkg.RosPack()
-    base_path = rospack.get_path('jackal_helper')
-    os.environ['GAZEBO_PLUGIN_PATH'] = os.path.join(base_path, "plugins")
     
     launch_file = join(base_path, 'launch', 'gazebo_launch.launch')
     world_name = join(base_path, "worlds", world_name)

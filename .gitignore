@@ -1,0 +1,17 @@
+# ROS工作空间必忽略
+build/
+devel/
+install/
+log/
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.so
+*.o
+*.launch.user
+*.bag
+*.d
+*.idx
+*.log
+
