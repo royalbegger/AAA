@@ -1,0 +1,36 @@
+# Gmapping parameters
+odom_frame: "odom"
+base_frame: "base_link"
+map_frame: "map"
+
+throttle_scans: 2
+map_update_interval: 0.2
+maxUrange: 8.0
+maxRange: 10.0
+sigma: 0.04
+kernelSize: 1
+lstep: 0.05
+astep: 0.05
+iterations: 3
+lsigma: 0.075
+ogain: 3.0
+minimumScore: 0.0
+lskip: 2
+srr: 0.01
+srt: 0.02
+str: 0.01
+stt: 0.02
+linearUpdate: 0.2
+angularUpdate: 0.05
+temporalUpdate: -1.0
+resampleThreshold: 0.5
+particles: 10
+xmin: -4.0
+ymin: -5.0
+xmax: 4.0
+ymax: 12.0
+delta: 0.04
+llsamplerange: 0.02
+llsamplestep: 0.02
+lasamplerange: 0.01
+lasamplestep: 0.01
