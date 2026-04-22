@@ -16,6 +16,7 @@ find_package(catkin REQUIRED COMPONENTS
     nav_core
     rospy
     nav_msgs
+    tf2
     tf2_ros
     gmapping
 )
@@ -115,7 +116,7 @@ find_package(Protobuf REQUIRED)
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES gmapping_pkg
-   CATKIN_DEPENDS roscpp rospy sensor_msgs std_msgs
+   CATKIN_DEPENDS roscpp rospy sensor_msgs std_msgs geometry_msgs nav_msgs tf2 tf2_ros
 #  DEPENDS system_lib
 )
 
@@ -146,6 +147,7 @@ include_directories(
 # add_executable(${PROJECT_NAME}_node src/gmapping_pkg_node.cpp)
 add_executable(esdf_2d_node src/esdf.cpp)
 add_executable(scan_preprocessor_node src/scan_preprocessor.cpp)
+add_executable(dynamic_pointcloud_filter_node src/dynamic_pointcloud_filter_node.cpp)
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -165,6 +167,9 @@ target_link_libraries(esdf_2d_node
   ${catkin_LIBRARIES}
 )
 target_link_libraries(scan_preprocessor_node
+  ${catkin_LIBRARIES}
+)
+target_link_libraries(dynamic_pointcloud_filter_node
   ${catkin_LIBRARIES}
 )
 
