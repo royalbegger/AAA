@@ -74,7 +74,8 @@ class NavigationNode:
         self.lidar_sub = rospy.Subscriber('/front/scan_preprocessed', LaserScan, self.lidar_callback)
         self.tf_buffer = tf2_ros.Buffer()  # 存储TF变换的缓冲区
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)  # 监听TF
-        self.timer = rospy.Timer(rospy.Duration(0.1), self.tf_callback)
+        # self.timer = rospy.Timer(rospy.Duration(0.1), self.tf_callback) #gmapping定位结果
+        self.odom_sub = rospy.Subscriber('/odometry/filtered', Odometry, self.odom_callback)#定位真值
         self.model_sub = rospy.Subscriber('/gazebo/model_states', ModelStates, self.model_callback)
         self.path_sub = rospy.Subscriber('/path', Path, self.path_callback)
         # 新增：可视化目标点的发布者
@@ -289,6 +290,22 @@ class NavigationNode:
     #     _, _, yaw = t3d_euler.quat2euler([q.w, q.x, q.y, q.z], axes='sxyz')
     #     self.current_position = (x, y)
     #     self.current_heading  = math.degrees(yaw)
+    def odom_callback(self, msg):
+        self.odom_data = msg
+        x = msg.pose.pose.position.x
+        y = msg.pose.pose.position.y
+        orientation_q = msg.pose.pose.orientation
+        q_ros = [orientation_q.w, orientation_q.x, orientation_q.y, orientation_q.z]
+        roll, pitch, yaw = t3d_euler.quat2euler(q_ros, axes='sxyz')
+        theta = math.degrees(yaw)
+        if theta < -180:
+            theta += 360
+        elif theta > 180:
+            theta -= 360
+        self.current_position = (x + self.INIT_POSITION[0], y + self.INIT_POSITION[1])
+        self.current_heading = theta
+        self.state = [msg.pose.pose.position.x, msg.pose.pose.position.y, msg.twist.twist.linear.x, msg.twist.twist.linear.y]
+
     def tf_callback(self, event):
         """
         定时器回调函数：周期性读取odom→base_link的TF变换，提取位置和朝向

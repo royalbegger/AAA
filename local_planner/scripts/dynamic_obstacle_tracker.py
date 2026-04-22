@@ -28,7 +28,7 @@ class DynamicObstacleTrackerNode:
         self.dbscan_min_samples = rospy.get_param("~dbscan_min_samples", 4)
         self.dynamic_speed_threshold = rospy.get_param("~dynamic_speed_threshold", 0.1)
         self.prediction_steps = rospy.get_param("~prediction_steps", 10)
-        self.prediction_dt = rospy.get_param("~prediction_dt", 0.2)
+        self.prediction_dt = rospy.get_param("~prediction_dt", 1.0)
 
         self.centroid_pub = rospy.Publisher("/obstacle_centroids", PoseArray, queue_size=1)
         self.tracker_velocity_pub = rospy.Publisher("/dynamic_obstacle_velocity", PoseArray, queue_size=1)
@@ -196,7 +196,7 @@ class DynamicObstacleTrackerNode:
                 prediction_marker.points.append(Point(end[0], end[1], 0.05))
 
         self.centroid_pub.publish(centroid_msg)
-        self.tracker_velocity_pub.publish(velocity_msg)
+        # self.tracker_velocity_pub.publish(velocity_msg)
         self.cluster_marker_pub.publish(centroid_marker)
         self.prediction_marker_pub.publish(prediction_marker)
 
