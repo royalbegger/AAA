@@ -15,7 +15,7 @@
     <param name="output_scan_topic" value="$(arg scan_topic)"/>
     <param name="replace_inf_range" value="$(arg replace_inf_range)"/>
   </node>
-
+<!-- 
   <node pkg="esdf_mapping" type="dynamic_pointcloud_filter_node" name="dynamic_pointcloud_filter_node" output="log">
     <param name="input_cloud_topic" value="$(arg input_cloud_topic)"/>
     <param name="output_cloud_topic" value="$(arg output_static_cloud_topic)"/>
@@ -23,7 +23,7 @@
     <param name="global_frame" value="$(arg global_frame)"/>
     <param name="base_frame" value="$(arg base_frame)"/>
     <param name="publish_dynamic_cloud" value="$(arg publish_dynamic_cloud)"/>
-  </node>
+  </node> -->
 
   <node pkg="gmapping" type="slam_gmapping" name="slam_gmapping" output="log">
     <rosparam file="$(find esdf_mapping)/configs/gmapping.yaml" command="load"/>
@@ -31,8 +31,8 @@
   </node>
 
   <!--输出ESDF地图-->
-  <!-- <node name="esdf_2d_node" pkg="esdf_mapping" type="esdf_2d_node" output="screen">
+  <node name="esdf_2d_node" pkg="esdf_mapping" type="esdf_2d_node" output="screen">
     <param name="unknown_decay_factor" value="1"/>
     <param name="unknown_decay_offset" value=""/>
-</node> -->
+</node>
 </launch>

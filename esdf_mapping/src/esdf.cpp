@@ -81,25 +81,25 @@ private:
         int value = 100;
         int x1 = 0;
         int x2 = 0;
-        while (!(x1 < 96 && x2 > 96))
-        {
-            for (int x = 0; x < W; x++)
-            {
-                int idx = value * W + x;
-                int occ = map->data[idx];
-                if(occ > 0 && Changing_Flag == 0)
-                {
-                    x1 = x;
-                    Changing_Flag = 1;
-                }
-                else if(occ < 0 && Changing_Flag == 1)
-                {
-                    x2 = x;
-                    Changing_Flag = 0;
-                }
-            }
-            value++ ;
-        }
+        // while (!(x1 < 96 && x2 > 96))
+        // {
+        //     for (int x = 0; x < W; x++)
+        //     {
+        //         int idx = value * W + x;
+        //         int occ = map->data[idx];
+        //         if(occ > 0 && Changing_Flag == 0)
+        //         {
+        //             x1 = x;
+        //             Changing_Flag = 1;
+        //         }
+        //         else if(occ < 0 && Changing_Flag == 1)
+        //         {
+        //             x2 = x;
+        //             Changing_Flag = 0;
+        //         }
+        //     }
+        //     value++ ;
+        // }
         
         for (int y = 0; y < H; y++)
         {
@@ -107,11 +107,11 @@ private:
             {
                 int idx = y * W + x;
                 int occ = map->data[idx];
-                if (x < x1 || x > x2)
-                    grid[idx] = 0.0f;   
-                else 
-                    if(occ == 100 )
-                        grid[idx] = 0.0f;              
+                // if (x < x1 || x > x2)
+                //     grid[idx] = 0.0f;   
+                // else 
+                if(occ == 100)
+                    grid[idx] = 0.0f;              
             }
         }
 
