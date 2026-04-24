@@ -415,14 +415,13 @@ def vfh_star_full(currentPos, currentHeading, heading_sector, ds, ng, hb, thresh
     root.f_cost = 0
     heapq.heappush(open_list, (root.f_cost, root))
     best_node = None
-
+    candidates = generate_candidate_headings(hb, heading_sector, threshold, robotDim, wideValleyMin)
     while open_list:
         f, node = heapq.heappop(open_list)
         if node.depth == ng:
             if best_node is None or node.g_cost < best_node.g_cost:
                 best_node = node
             continue
-        candidates = generate_candidate_headings(hb, heading_sector, threshold, robotDim, wideValleyMin)
         for cand in candidates:
             proj_pos, proj_heading = project_trajectory(node.position, node.heading, cand, ds)
             cost = cost_trajectory(node.position, proj_pos, heading_sector, cand, prev_heading)
