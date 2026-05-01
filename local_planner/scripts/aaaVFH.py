@@ -379,7 +379,7 @@ class NavigationNode:
             heading_sector = calc_Target(self.target_absolute_position, self.current_position, self.current_heading)
             
             # Compute candidate heading using VFH* with A* search.
-            candidate_heading = self.vfh_star(hb, heading_sector, self.current_position, self.current_heading)
+            # candidate_heading = self.vfh_star(hb, heading_sector, self.current_position, self.current_heading)
             
             # Temporal smoothing: low-pass filter.
             # if self.prev_heading is None:
@@ -396,7 +396,8 @@ class NavigationNode:
             self.linear_sim.compute()
             lin_vel = self.linear_sim.output['Linear_Velocity']
             
-            smoothed_heading = candidate_heading 
+            smoothed_heading = heading_sector 
+            # smoothed_heading = candidate_heading 
             # --- Angular Velocity Calculation via Fuzzy Controller ---
             self.angular_sim.input['Angular_Input'] = smoothed_heading
             self.angular_sim.compute()

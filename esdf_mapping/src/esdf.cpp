@@ -14,9 +14,11 @@ public:
         // 未知区域衰减参数
         pnh.param<double>("unknown_decay_factor", unknown_decay_factor_, 0.8);
         pnh.param<int>("unknown_decay_offset", unknown_decay_offset_, 0);
+        pnh.param<double>("obstacle_inflation_factor", obstacle_inflation_factor_, 1.2);
         // 确保衰减因子在 (0,1] 范围内
         if (unknown_decay_factor_ <= 0.0) unknown_decay_factor_ = 0.1;
         if (unknown_decay_factor_ > 1.0) unknown_decay_factor_ = 1.0;
+        if (obstacle_inflation_factor_ < 0.0) obstacle_inflation_factor_ = 0.0;
 
         map_sub_ = nh.subscribe("/map", 1, &ESDF2D::mapCallback, this);
         esdf_pub_ = nh.advertise<nav_msgs::OccupancyGrid>("/esdf_map", 1);
@@ -27,6 +29,7 @@ private:
     ros::Publisher esdf_pub_;
     const float INF = 1e8;
     double unknown_decay_factor_;
+    double obstacle_inflation_factor_;
     int unknown_decay_offset_;
 
     // ----------------- 1D Squared Distance Transform -----------------
@@ -63,6 +66,51 @@ private:
             while (z[k + 1] < q) k++;
             float dx = q - v[k];
             d[q] = dx * dx + f[v[k]];
+        }
+    }
+
+    void inflateObstacleGrid(std::vector<float>& grid, int W, int H)
+    {
+        if (obstacle_inflation_factor_ <= 0.0) {
+            return;
+        }
+
+        const int radius_cells = static_cast<int>(std::ceil(obstacle_inflation_factor_));
+        const double radius_sq = obstacle_inflation_factor_ * obstacle_inflation_factor_;
+        std::vector<int> obstacle_indices;
+        obstacle_indices.reserve(grid.size());
+
+        for (int idx = 0; idx < static_cast<int>(grid.size()); ++idx)
+        {
+            if (grid[idx] == 0.0f)
+            {
+                obstacle_indices.push_back(idx);
+            }
+        }
+
+        for (const int idx : obstacle_indices)
+        {
+            const int ox = idx % W;
+            const int oy = idx / W;
+            for (int dy = -radius_cells; dy <= radius_cells; ++dy)
+            {
+                for (int dx = -radius_cells; dx <= radius_cells; ++dx)
+                {
+                    if (dx * dx + dy * dy > radius_sq)
+                    {
+                        continue;
+                    }
+
+                    const int nx = ox + dx;
+                    const int ny = oy + dy;
+                    if (nx < 0 || nx >= W || ny < 0 || ny >= H)
+                    {
+                        continue;
+                    }
+
+                    grid[ny * W + nx] = 0.0f;
+                }
+            }
         }
     }
 
@@ -115,6 +163,9 @@ private:
             }
         }
 
+        // Step 1.5: 对原始占用栅格进行障碍膨胀，膨胀系数默认 1.2 个栅格。
+        inflateObstacleGrid(grid, W, H);
+
         // Step 2: X 方向 EDT
         std::vector<float> temp(W * H, INF);
         for (int y = 0; y < H; y++)
@@ -144,7 +195,7 @@ private:
         esdf.header = map->header;
         esdf.info = map->info;
         esdf.data.resize(W * H);
-        const float D_MAX = 1.0; // 最大有效距离
+        const float D_MAX = 1; // 最大有效距离
         for (int i = 0; i < W * H; i++)
         {
             int8_t value;

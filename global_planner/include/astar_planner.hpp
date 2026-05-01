@@ -96,6 +96,14 @@ private:
     std::string robot_base_frame_;
     std::string global_frame_;
     bool cancel_planner_flag_;
+
+    // 路径平滑参数
+    bool enable_path_smoothing_;
+    int smoothing_kernel_size_;
+    int smoothing_num_scale_;
+    int smoothing_min_points_;
+    int path_downsample_step_;
+    double smoothing_sigma_;
     
     // 车辆尺寸参数
     double vehicle_width_;      // 车辆宽度（米）

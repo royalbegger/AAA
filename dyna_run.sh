@@ -9,12 +9,12 @@ if [ -z "$WORLD_IDX" ]; then
     exit 1
 fi
 
-# 激活 conda
-source ~/anaconda3/etc/profile.d/conda.sh
-conda activate RL_env
+# # 激活 conda
+# source ~/anaconda3/etc/profile.d/conda.sh
+# conda activate RL_env
 
 # source ROS workspace
 source ../devel/setup.bash
 
 # 启动程序
-python3 run.py --world_idx ${WORLD_IDX} --gui
+python3 run.py --world_idx ${WORLD_IDX}

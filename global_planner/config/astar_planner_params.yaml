@@ -3,13 +3,21 @@
 # Load this via <rosparam file="$(find astar)/config/astar_planner_params.yaml" command="load"/> in launch file
 
 # Core Planning Parameters
-# costmap_topic: "/esdf_map"
-costmap_topic: "/map"
+costmap_topic: "/esdf_map"
+# costmap_topic: "/map"
 cost_threshold: 85  # Cost threshold for occupancy (0-100)
 use_diagonal_movement: true  # Allow diagonal moves in A* (8-connected grid)
 robot_base_frame: "base_link"  # Robot's base frame for TF
 global_frame: "map"  # Global frame for planning (e.g., map)
 planning_frequency: 2.0  # Path replanning frequency (Hz)
+
+# Path Smoothing Parameters
+enable_path_smoothing: true
+smoothing_kernel_size: 9
+smoothing_num_scale: 1
+smoothing_sigma: 0.8
+smoothing_min_points: 2
+path_downsample_step: 5  # Keep every Nth raw A* waypoint before smoothing; 1 disables downsampling
 
 # Vehicle Footprint Parameters
 vehicle_width: 0.27  # Vehicle width in meters

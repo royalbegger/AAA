@@ -1,6 +1,7 @@
 <launch>
   <!-- 1. 启动Nav-VFH 节点 -->
-  <node name="nav_vfh" pkg="local_planner" type="aaaVFH.py" output="screen"/>
+  <!-- <node name="nav_vfh" pkg="local_planner" type="aaaVFH.py" output="screen"/> -->
+  <node name="nav_vfh" pkg="local_planner" type="pure_pursuit.py" output="screen"/>
 
   <!-- 2. 启动 mapping 节点 -->
   <!--include file="$(find aaamapping)/launch/aaamapping.launch"/-->

@@ -1,4 +1,5 @@
 #include "astar_planner.hpp"
+#include "gauss_smooth_3d.hpp"
 #include <ros/ros.h>
 #include <tf/transform_listener.h>
 #include <nav_msgs/OccupancyGrid.h>
@@ -37,6 +38,51 @@ struct PairHash {
     }
 };
 
+static double computeYawFromSmoothedPath(const std::vector<GaussSmooth3D::Point>& points, size_t index)
+{
+    if (points.size() < 2) {
+        return 0.0;
+    }
+
+    double dx = 0.0;
+    double dy = 0.0;
+    if (index < points.size() - 1) {
+        dx = points[index + 1][0] - points[index][0];
+        dy = points[index + 1][1] - points[index][1];
+    } else {
+        dx = points[index][0] - points[index - 1][0];
+        dy = points[index][1] - points[index - 1][1];
+    }
+
+    if (std::abs(dx) < 1e-9 && std::abs(dy) < 1e-9) {
+        return 0.0;
+    }
+
+    return std::atan2(dy, dx);
+}
+
+static std::vector<GaussSmooth3D::Point> downsamplePathPoints(
+    const std::vector<GaussSmooth3D::Point>& points,
+    int step)
+{
+    if (points.size() <= 2 || step <= 1) {
+        return points;
+    }
+
+    std::vector<GaussSmooth3D::Point> downsampled;
+    downsampled.reserve((points.size() + static_cast<size_t>(step) - 1) / static_cast<size_t>(step) + 1);
+
+    for (size_t i = 0; i < points.size(); i += static_cast<size_t>(step)) {
+        downsampled.push_back(points[i]);
+    }
+
+    if (downsampled.back() != points.back()) {
+        downsampled.push_back(points.back());
+    }
+
+    return downsampled;
+}
+
 AStarPlanner::AStarPlanner() : 
     nh_("~"),  // NodeHandle 初始化
     tf_listener_(ros::Duration(10))  // TF Listener 在初始化列表中直接构造（缓存10秒）
@@ -48,6 +94,22 @@ AStarPlanner::AStarPlanner() :
     nh_.param("global_frame", global_frame_, std::string("map"));
     double planning_frequency;
     nh_.param("planning_frequency", planning_frequency, 2.0);
+
+    // 路径平滑参数
+    nh_.param("enable_path_smoothing", enable_path_smoothing_, true);
+    nh_.param("smoothing_kernel_size", smoothing_kernel_size_, 7);
+    nh_.param("smoothing_num_scale", smoothing_num_scale_, 3);
+    nh_.param("smoothing_sigma", smoothing_sigma_, 1.0);
+    nh_.param("smoothing_min_points", smoothing_min_points_, 2);
+    nh_.param("path_downsample_step", path_downsample_step_, 1);
+    smoothing_kernel_size_ = std::max(1, smoothing_kernel_size_);
+    smoothing_num_scale_ = std::max(1, smoothing_num_scale_);
+    smoothing_min_points_ = std::max(2, smoothing_min_points_);
+    path_downsample_step_ = std::max(1, path_downsample_step_);
+    if (smoothing_sigma_ <= 0.0) {
+        ROS_WARN("smoothing_sigma must be positive, reset to 1.0");
+        smoothing_sigma_ = 1.0;
+    }
     
     // 车辆尺寸参数
     nh_.param("vehicle_width", vehicle_width_, 0.6);
@@ -56,8 +118,8 @@ AStarPlanner::AStarPlanner() :
     
     // 订阅话题名称
     std::string costmap_topic;
-    // nh_.param<std::string>("costmap_topic", costmap_topic, "/esdf_map");
-    nh_.param<std::string>("costmap_topic", costmap_topic, "/map");
+    nh_.param<std::string>("costmap_topic", costmap_topic, "/esdf_map");
+    // nh_.param<std::string>("costmap_topic", costmap_topic, "/map");
 
     // 创建订阅者 - 订阅静态地图
     costmap_sub_ = nh_.subscribe<nav_msgs::OccupancyGrid>(
@@ -86,6 +148,10 @@ AStarPlanner::AStarPlanner() :
     ROS_INFO("  - Goal from rviz: /move_base_simple/goal");
     ROS_INFO("  - Robot pose via TF: %s -> %s", global_frame_.c_str(), robot_base_frame_.c_str());
     ROS_INFO("Cost threshold: %.1f", cost_threshold_);
+    ROS_INFO("Path smoothing: %s (kernel=%d, num_scale=%d, sigma=%.2f, min_points=%d, downsample_step=%d)",
+             enable_path_smoothing_ ? "enabled" : "disabled",
+             smoothing_kernel_size_, smoothing_num_scale_, smoothing_sigma_,
+             smoothing_min_points_, path_downsample_step_);
     ROS_INFO("Vehicle size: %.2fx%.2f meters, padding: %d cells", 
              vehicle_width_, vehicle_length_, footprint_padding_);
 }
@@ -676,27 +742,59 @@ void AStarPlanner::publishPath(const std::vector<AStarNode>& path)
     nav_msgs::Path path_msg;
     path_msg.header.stamp = ros::Time::now();
     path_msg.header.frame_id = global_frame_;
+
+    std::vector<GaussSmooth3D::Point> path_points;
+    path_points.reserve(path.size());
     
     for (size_t i = 0; i < path.size(); ++i) {
         const auto& node = path[i];
         auto world_pos = gridToWorld(node.x, node.y);
-        
+
+        path_points.push_back(GaussSmooth3D::Point{{world_pos.first, world_pos.second, 0.0}});
+    }
+
+    std::vector<GaussSmooth3D::Point> downsampled_points =
+        downsamplePathPoints(path_points, path_downsample_step_);
+    if (downsampled_points.size() != path_points.size()) {
+        ROS_DEBUG("Downsampled raw A* path from %zu to %zu poses (step=%d)",
+                  path_points.size(), downsampled_points.size(), path_downsample_step_);
+    }
+
+    std::vector<GaussSmooth3D::Point> publish_points = downsampled_points;
+    if (enable_path_smoothing_ && downsampled_points.size() >= static_cast<size_t>(smoothing_min_points_)) {
+        try {
+            GaussSmooth3D smoother(smoothing_kernel_size_, smoothing_num_scale_);
+            publish_points = smoother.smoothTrajectory(downsampled_points, smoothing_sigma_);
+            ROS_DEBUG("Smoothed downsampled path from %zu to %zu poses",
+                      downsampled_points.size(), publish_points.size());
+        } catch (const std::exception& e) {
+            ROS_WARN_THROTTLE(1.0, "Failed to smooth path, publishing downsampled A* path: %s", e.what());
+            publish_points = downsampled_points;
+        }
+    }
+
+    for (size_t i = 0; i < publish_points.size(); ++i) {
+        const auto& point = publish_points[i];
+
         geometry_msgs::PoseStamped pose_stamped;
         pose_stamped.header = path_msg.header;
-        pose_stamped.pose.position.x = world_pos.first;
-        pose_stamped.pose.position.y = world_pos.second;
-        pose_stamped.pose.position.z = 0.0;
+        pose_stamped.pose.position.x = point[0];
+        pose_stamped.pose.position.y = point[1];
+        pose_stamped.pose.position.z = point[2];
 
         // 如果是路径的最后一个点，使用目标的位姿
-        if (i == path.size() - 1 && !current_goal_.header.frame_id.empty()) {
+        if (i == publish_points.size() - 1 && !current_goal_.header.frame_id.empty()) {
             // 使用目标点的位姿
             pose_stamped.pose.orientation = current_goal_.pose.orientation;
             ROS_DEBUG("Setting goal orientation for final waypoint: qx=%.3f, qy=%.3f, qz=%.3f, qw=%.3f",
                       current_goal_.pose.orientation.x, current_goal_.pose.orientation.y,
                       current_goal_.pose.orientation.z, current_goal_.pose.orientation.w);
         } else {
-            // 中间路径点保持默认位姿
-            pose_stamped.pose.orientation.w = 1.0;
+            const double yaw = computeYawFromSmoothedPath(publish_points, i);
+            pose_stamped.pose.orientation.x = 0.0;
+            pose_stamped.pose.orientation.y = 0.0;
+            pose_stamped.pose.orientation.z = std::sin(yaw * 0.5);
+            pose_stamped.pose.orientation.w = std::cos(yaw * 0.5);
         }        
         path_msg.poses.push_back(pose_stamped);
     }

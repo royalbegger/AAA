@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.0.2)
 project(global_planner)  # 匹配你的包名（从 package.xml）
 
 ## Compile as C++14 (for std::unique_ptr 等)
-## add_compile_options(-std=c++14)
+add_compile_options(-std=c++14)
 
 ## Find catkin macros and libraries
 find_package(catkin REQUIRED COMPONENTS
