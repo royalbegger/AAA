@@ -96,6 +96,7 @@ private:
     std::string robot_base_frame_;
     std::string global_frame_;
     bool cancel_planner_flag_;
+    double unknown_cost_;  // 未知区域通行代价
 
     // 路径平滑参数
     bool enable_path_smoothing_;

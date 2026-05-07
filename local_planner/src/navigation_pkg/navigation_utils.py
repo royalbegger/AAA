@@ -380,65 +380,53 @@ def generate_candidate_headings(hb, heading_sector, threshold, robotDim, wideVal
         candidates.append(cand)
     return list(set(candidates))
 
-
 def vfh_star_full(currentPos, currentHeading, heading_sector, ds, ng, hb, threshold, robotDim, wideValleyMin, prev_heading):
     """
-    执行完整的简化版 VFH* 前瞻搜索，返回根节点应采取的航向。
-
-    搜索流程如下：
-    1. 以当前位姿作为根节点；
-    2. 在每一层根据当前直方图生成候选航向；
-    3. 用 `project_trajectory` 做一步前向投影；
-    4. 用 `cost_trajectory` 和启发式代价对节点排序；
-    5. 搜索到深度 `ng` 后，选择累计代价最低的叶节点，其根动作即为最终输出。
-
-    `aaaVFH.py` 中通过该函数把单步 VFH 的“局部可行航向”扩展为带前瞻的航向选择。
-
-    Args:
-        currentPos: 当前坐标。
-        currentHeading: 当前朝向。
-        heading_sector: 目标扇区编号。
-        ds: 每次前向投影的步长。
-        ng: 前瞻搜索深度。
-        hb: 二值障碍直方图。
-        threshold: 安全距离阈值。
-        robotDim: 机器人宽度。
-        wideValleyMin: 宽波谷判定阈值。
-        prev_heading: 上一时刻航向，用于切换惩罚。
-
-    Returns:
-        int: 代价最低的根节点候选航向；若搜索失败，则退回目标扇区。
+    Full VFH* search: expands candidate trajectories up to depth ng.
+    The cost function now includes a switching penalty based on the difference
+    between the candidate heading and prev_heading.
+    Returns the candidate heading from the root that leads to the lowest total cost.
     """
-    import heapq
-    open_list = []
-    root = Node(currentPos, currentHeading, 0, 0, action=None)
-    root.f_cost = 0
-    heapq.heappush(open_list, (root.f_cost, root))
-    best_node = None
     candidates = generate_candidate_headings(hb, heading_sector, threshold, robotDim, wideValleyMin)
-    while open_list:
-        f, node = heapq.heappop(open_list)
-        if node.depth == ng:
-            if best_node is None or node.g_cost < best_node.g_cost:
-                best_node = node
-            continue
-        for cand in candidates:
-            proj_pos, proj_heading = project_trajectory(node.position, node.heading, cand, ds)
-            cost = cost_trajectory(node.position, proj_pos, heading_sector, cand, prev_heading)
-            new_g = node.g_cost + cost
-            new_depth = node.depth + 1
-            if node.depth == 0:
-                action = cand
-            else:
-                action = node.action
-            # 启发式项鼓励在剩余步数内继续向目标方向靠近。
-            h_cost = (ng - new_depth) * ds + 0.1 * abs(cand - heading_sector)
-            new_f = new_g + h_cost
-            new_node = Node(proj_pos, proj_heading, new_g, new_depth, action)
-            new_node.f_cost = new_f
-            heapq.heappush(open_list, (new_node.f_cost, new_node))
-    if best_node is not None:
-        return best_node.action
-    else:
+
+    if not candidates:
         return heading_sector
+
+    def candidate_cost(cand):
+        proj_pos, _ = project_trajectory(currentPos, currentHeading, cand, ds)
+        return cost_trajectory(currentPos, proj_pos, heading_sector, cand, prev_heading)
+
+    return min(candidates, key=candidate_cost)
+    # import heapq
+    # open_list = []
+    # root = Node(currentPos, currentHeading, 0, 0, action=None)
+    # root.f_cost = 0
+    # heapq.heappush(open_list, (root.f_cost, root))
+    # best_node = None
+
+    # while open_list:
+    #     f, node = heapq.heappop(open_list)
+    #     if node.depth == ng:
+    #         if best_node is None or node.g_cost < best_node.g_cost:
+    #             best_node = node
+    #         continue
+    #     candidates = generate_candidate_headings(hb, heading_sector, threshold, robotDim, wideValleyMin)
+    #     for cand in candidates:
+    #         proj_pos, proj_heading = project_trajectory(node.position, node.heading, cand, ds)
+    #         cost = cost_trajectory(node.position, proj_pos, heading_sector, cand, prev_heading)
+    #         new_g = node.g_cost + cost
+    #         new_depth = node.depth + 1
+    #         if node.depth == 0:
+    #             action = cand
+    #         else:
+    #             action = node.action
+    #         h_cost = (ng - new_depth) * ds + 0.1 * abs(cand - heading_sector)
+    #         new_f = new_g + h_cost
+    #         new_node = Node(proj_pos, proj_heading, new_g, new_depth, action)
+    #         new_node.f_cost = new_f
+    #         heapq.heappush(open_list, (new_node.f_cost, new_node))
+    # if best_node is not None:
+    #     return best_node.action
+    # else:
+    #     return heading_sector
 

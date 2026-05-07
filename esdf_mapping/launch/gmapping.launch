@@ -1,29 +1,14 @@
 <launch>
 
   <arg name="raw_scan_topic" default="$(eval optenv('JACKAL_LASER_TOPIC', 'front/scan'))" />
-  <arg name="scan_topic" default="front/scan_preprocessed" />
+  <arg name="scan_topic" default="front/scan" />
   <arg name="replace_inf_range" default="20.0" />
-  <arg name="input_cloud_topic" default="/points_raw" />
-  <arg name="output_static_cloud_topic" default="/points_static_filtered" />
-  <arg name="output_dynamic_cloud_topic" default="/points_dynamic_filtered" />
-  <arg name="global_frame" default="map" />
-  <arg name="base_frame" default="base_link" />
-  <arg name="publish_dynamic_cloud" default="true" />
 
   <node pkg="esdf_mapping" type="scan_preprocessor_node" name="scan_preprocessor_node" output="log">
     <param name="input_scan_topic" value="$(arg raw_scan_topic)"/>
     <param name="output_scan_topic" value="$(arg scan_topic)"/>
     <param name="replace_inf_range" value="$(arg replace_inf_range)"/>
   </node>
-<!-- 
-  <node pkg="esdf_mapping" type="dynamic_pointcloud_filter_node" name="dynamic_pointcloud_filter_node" output="log">
-    <param name="input_cloud_topic" value="$(arg input_cloud_topic)"/>
-    <param name="output_cloud_topic" value="$(arg output_static_cloud_topic)"/>
-    <param name="dynamic_cloud_topic" value="$(arg output_dynamic_cloud_topic)"/>
-    <param name="global_frame" value="$(arg global_frame)"/>
-    <param name="base_frame" value="$(arg base_frame)"/>
-    <param name="publish_dynamic_cloud" value="$(arg publish_dynamic_cloud)"/>
-  </node> -->
 
   <node pkg="gmapping" type="slam_gmapping" name="slam_gmapping" output="log">
     <rosparam file="$(find esdf_mapping)/configs/gmapping.yaml" command="load"/>

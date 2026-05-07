@@ -89,6 +89,7 @@ AStarPlanner::AStarPlanner() :
 {
     // 获取参数（ROS1风格：nh.param自动声明并获取）
     nh_.param("cost_threshold", cost_threshold_, 50.0);
+    nh_.param("unknown_cost", unknown_cost_, 40.0);
     nh_.param("use_diagonal_movement", use_diagonal_movement_, true);
     nh_.param("robot_base_frame", robot_base_frame_, std::string("base_link"));
     nh_.param("global_frame", global_frame_, std::string("map"));
@@ -147,7 +148,7 @@ AStarPlanner::AStarPlanner() :
     ROS_INFO("  - Static map: %s", costmap_topic.c_str());
     ROS_INFO("  - Goal from rviz: /move_base_simple/goal");
     ROS_INFO("  - Robot pose via TF: %s -> %s", global_frame_.c_str(), robot_base_frame_.c_str());
-    ROS_INFO("Cost threshold: %.1f", cost_threshold_);
+    ROS_INFO("Cost threshold: %.1f, Unknown cost: %.1f", cost_threshold_, unknown_cost_);
     ROS_INFO("Path smoothing: %s (kernel=%d, num_scale=%d, sigma=%.2f, min_points=%d, downsample_step=%d)",
              enable_path_smoothing_ ? "enabled" : "disabled",
              smoothing_kernel_size_, smoothing_num_scale_, smoothing_sigma_,
@@ -599,7 +600,13 @@ double AStarPlanner::calculateMoveCost(const AStarNode& from, const AStarNode& t
     // 考虑地图代价
     int index = to.y * costmap_.info.width + to.x;
     if (index >= 0 && index < static_cast<int>(costmap_.data.size())) {
-        double cell_cost = costmap_.data[index] / 100.0;
+        int8_t cell_value = costmap_.data[index];
+        double cell_cost;
+        if (cell_value == -1) {
+            cell_cost = unknown_cost_ / 100.0;
+        } else {
+            cell_cost = cell_value / 100.0;
+        }
         if (cell_cost < 0) cell_cost = 0;
         base_cost *= (1.0 + cell_cost);
     }
