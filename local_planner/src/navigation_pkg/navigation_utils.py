@@ -8,8 +8,24 @@ def calcDanger(lidar, maxRange):
     m = np.where(lidar >= maxRange + 0.5, 0, a - lidar * b)
     return m
 
-def calc_h(m, sector_size):
+def calc_h(m, sector_size, sector_count=None):
     m = np.array(m)
+    if sector_count is not None:
+        sectors = int(sector_count)
+        if sectors <= 0:
+            return np.array([])
+        edges = np.linspace(0, len(m), sectors + 1)
+        h = np.zeros(sectors)
+        for i in range(sectors):
+            start = int(round(edges[i]))
+            end = int(round(edges[i + 1]))
+            if end <= start:
+                sample_idx = min(max(start, 0), len(m) - 1)
+                h[i] = m[sample_idx] if len(m) > 0 else 0
+            else:
+                h[i] = np.mean(m[start:end])
+        return h
+
     sectors = len(m) // sector_size
     h = np.zeros(sectors)
     for i in range(sectors):
@@ -56,7 +72,7 @@ def find_valleys(Hb, threshold, robotW):
     passable = passable.T
     return passable, sectToClear
 
-def calc_Target(targetPos, currentPos, currentHeading):
+def calc_Target(targetPos, currentPos, currentHeading, sector_count=90):
     tX = targetPos[0]
     tY = targetPos[1]
     cX = currentPos[0]
@@ -90,7 +106,8 @@ def calc_Target(targetPos, currentPos, currentHeading):
         Th = -135
     elif Th > 135:
         Th = 135
-    Th_s = round(((Th + 135) * 89 / 270) + 1)
+    sector_count = max(1, int(sector_count))
+    Th_s = round(((Th + 135) * (sector_count - 1) / 270) + 1)
     return Th_s
 
 def pick_valley(valleyArs, T_heading):
@@ -183,37 +200,46 @@ def vfh_star_full(currentPos, currentHeading, heading_sector, ds, ng, hb, thresh
     between the candidate heading and prev_heading.
     Returns the candidate heading from the root that leads to the lowest total cost.
     """
-    import heapq
-    open_list = []
-    root = Node(currentPos, currentHeading, 0, 0, action=None)
-    root.f_cost = 0
-    heapq.heappush(open_list, (root.f_cost, root))
-    best_node = None
+    candidates = generate_candidate_headings(hb, heading_sector, threshold, robotDim, wideValleyMin)
 
-    while open_list:
-        f, node = heapq.heappop(open_list)
-        if node.depth == ng:
-            if best_node is None or node.g_cost < best_node.g_cost:
-                best_node = node
-            continue
-        candidates = generate_candidate_headings(hb, heading_sector, threshold, robotDim, wideValleyMin)
-        for cand in candidates:
-            proj_pos, proj_heading = project_trajectory(node.position, node.heading, cand, ds)
-            cost = cost_trajectory(node.position, proj_pos, heading_sector, cand, prev_heading)
-            new_g = node.g_cost + cost
-            new_depth = node.depth + 1
-            if node.depth == 0:
-                action = cand
-            else:
-                action = node.action
-            h_cost = (ng - new_depth) * ds + 0.1 * abs(cand - heading_sector)
-            new_f = new_g + h_cost
-            new_node = Node(proj_pos, proj_heading, new_g, new_depth, action)
-            new_node.f_cost = new_f
-            heapq.heappush(open_list, (new_node.f_cost, new_node))
-    if best_node is not None:
-        return best_node.action
-    else:
+    if not candidates:
         return heading_sector
 
+    def candidate_cost(cand):
+        proj_pos, _ = project_trajectory(currentPos, currentHeading, cand, ds)
+        return cost_trajectory(currentPos, proj_pos, heading_sector, cand, prev_heading)
+
+    return min(candidates, key=candidate_cost)
+    # import heapq
+    # open_list = []
+    # root = Node(currentPos, currentHeading, 0, 0, action=None)
+    # root.f_cost = 0
+    # heapq.heappush(open_list, (root.f_cost, root))
+    # best_node = None
+
+    # while open_list:
+    #     f, node = heapq.heappop(open_list)
+    #     if node.depth == ng:
+    #         if best_node is None or node.g_cost < best_node.g_cost:
+    #             best_node = node
+    #         continue
+    #     candidates = generate_candidate_headings(hb, heading_sector, threshold, robotDim, wideValleyMin)
+    #     for cand in candidates:
+    #         proj_pos, proj_heading = project_trajectory(node.position, node.heading, cand, ds)
+    #         cost = cost_trajectory(node.position, proj_pos, heading_sector, cand, prev_heading)
+    #         new_g = node.g_cost + cost
+    #         new_depth = node.depth + 1
+    #         if node.depth == 0:
+    #             action = cand
+    #         else:
+    #             action = node.action
+    #         h_cost = (ng - new_depth) * ds + 0.1 * abs(cand - heading_sector)
+    #         new_f = new_g + h_cost
+    #         new_node = Node(proj_pos, proj_heading, new_g, new_depth, action)
+    #         new_node.f_cost = new_f
+    #         heapq.heappush(open_list, (new_node.f_cost, new_node))
+    # if best_node is not None:
+    #     return best_node.action
+    # else:
+    #     return heading_sector
 

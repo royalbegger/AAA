@@ -1,7 +1,7 @@
 <launch>
 
   <arg name="raw_scan_topic" default="$(eval optenv('JACKAL_LASER_TOPIC', 'front/scan'))" />
-  <arg name="scan_topic" default="front/scan_preprocessed" />
+  <arg name="scan_topic" default="front/scan" />
   <arg name="replace_inf_range" default="20.0" />
 
   <node pkg="esdf_mapping" type="scan_preprocessor_node" name="scan_preprocessor_node" output="log">
