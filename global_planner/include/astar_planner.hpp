@@ -57,12 +57,13 @@ private:
     bool isValidCell(int x, int y);
     double calculateHeuristic(const AStarNode& a, const AStarNode& b);
     double calculateMoveCost(const AStarNode& from, const AStarNode& to);
-    std::vector<AStarNode> getNeighbors(const AStarNode& current);
+    std::vector<AStarNode> getNeighbors(const AStarNode& current, const AStarNode& goal);
     std::vector<AStarNode> reconstructPath(AStarNode* goal_node);
     void pub_path();
     std::vector<AStarNode> current_path;
     // 简单的碰撞检测函数
     bool checkCollision(int center_x, int center_y);
+    bool isSegmentTraversable(const AStarNode& from, const AStarNode& to);
 
     std::pair<int, int> findNearestValidCell(int target_x, int target_y, int max_search_radius = 10);
     
@@ -93,6 +94,7 @@ private:
     // 参数
     double cost_threshold_;
     bool use_diagonal_movement_;
+    int astar_search_step_;
     std::string robot_base_frame_;
     std::string global_frame_;
     bool cancel_planner_flag_;

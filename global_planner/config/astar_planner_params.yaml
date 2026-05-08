@@ -5,17 +5,18 @@
 # Core Planning Parameters
 costmap_topic: "/esdf_map"
 # costmap_topic: "/map"
-cost_threshold: 93  # Cost threshold for occupancy (0-100)
+cost_threshold: 96  # Cost threshold for occupancy (0-100)
 unknown_cost: 40.0
 use_diagonal_movement: true  # Allow diagonal moves in A* (8-connected grid)
+astar_search_step: 2  # Search every Nth map cell; 2 halves A* grid resolution and speeds up planning
 robot_base_frame: "base_link"  # Robot's base frame for TF
 global_frame: "map"  # Global frame for planning (e.g., map)
 planning_frequency: 2.0  # Path replanning frequency (Hz)
 
 # Path Smoothing Parameters
 enable_path_smoothing: true
-smoothing_kernel_size: 9
-smoothing_num_scale: 1
+smoothing_kernel_size: 7
+smoothing_num_scale: 5
 smoothing_sigma: 0.8
 smoothing_min_points: 2
 path_downsample_step: 5  # Keep every Nth raw A* waypoint before smoothing; 1 disables downsampling

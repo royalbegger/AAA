@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 import rospy, math, numpy as np, transforms3d.euler as t3d_euler, skfuzzy as fuzz
 from skfuzzy import control as ctrl
 from sensor_msgs.msg import LaserScan
@@ -44,6 +45,12 @@ class NavigationNode:
         # 其余参数保持原样
         self.target_absolute_position = None
         self.goal_tolerance = rospy.get_param('~goal_tolerance', 0.4)
+        self.max_linear_accel = rospy.get_param('~max_linear_accel', 0.6)    # m/s^2
+        self.max_angular_accel = rospy.get_param('~max_angular_accel', 1.5)  # rad/s^2
+        self.cmd_dt = rospy.get_param('~cmd_dt', 0.1)
+        self.prev_cmd_linear = 0.0
+        self.prev_cmd_angular = 0.0
+        self.last_cmd_time = None
         self.max_range = 4.0
         self.sector_size = 8
         self.vfh_sector_count = 90
@@ -66,6 +73,7 @@ class NavigationNode:
         # 从全局路径中跟踪1米前方的点
         self.global_path = None
         self.lookahead_distance = 0.8  # 1米前向距离
+        self.max_turn_curvature = max(rospy.get_param('~max_turn_curvature', 3.0), 0.1)
         self.goal = None  # 等待RViz设置或从路径获取
         self.init_fuzzy_controllers()
         self.prev_heading = None
@@ -75,6 +83,18 @@ class NavigationNode:
         self.viz_pub = rospy.Publisher('/vfh/debug/markers', MarkerArray, queue_size=1)
         self.lookahead_target_pub = rospy.Publisher('/vfh/lookahead_target', Marker, queue_size=1)  # 追踪点可视化
         self.id_cnt  = 0          # 全局 id 计数器，防止重名
+
+        # 运行统计：时间、行驶里程、平均速度
+        default_stats_file = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), '..', 'test_record.txt'))
+        self.stats_file = os.path.expanduser(
+            rospy.get_param('~run_stats_file', default_stats_file))
+        self.stats_start_time = None
+        self.stats_end_time = None
+        self.total_distance = 0.0
+        self.last_distance_position = None
+        self.stats_recorded = False
+        rospy.on_shutdown(self.finish_run_stats)
 
         # 预定义颜色
         self.c_gray   = ColorRGBA(0.5, 0.5, 0.5, 0.8)
@@ -418,38 +438,55 @@ class NavigationNode:
     def init_fuzzy_controllers(self):
         # --- Linear Velocity Fuzzy Controller ---
         if self.environment_mode == 'static':
-            lin_vel_max = 0.7
+            lin_vel_max = 0.9
             linear_velocity = ctrl.Consequent(np.arange(0, lin_vel_max + 0.01, 0.01), 'Linear_Velocity')
-            scale = 1.0
-            linear_velocity['Very_Low']  = fuzz.trimf(linear_velocity.universe, [-0.175 * scale, 0, 0.175 * scale])
-            linear_velocity['Low']       = fuzz.trimf(linear_velocity.universe, [0, 0.175 * scale, 0.35 * scale])
-            linear_velocity['Medium']    = fuzz.trimf(linear_velocity.universe, [0.175 * scale, 0.35 * scale, 0.525 * scale])
-            linear_velocity['High']      = fuzz.trimf(linear_velocity.universe, [0.35 * scale, 0.525 * scale, 0.7 * scale])
-            linear_velocity['Very_High'] = fuzz.trimf(linear_velocity.universe, [0.525 * scale, 0.7 * scale, 0.7537 * scale])
+            scale = 2.0
+            linear_velocity['Very_Low']  = fuzz.trimf(linear_velocity.universe, [-0.175 * scale, 0.2, 0.375 * scale])
+            linear_velocity['Low']       = fuzz.trimf(linear_velocity.universe, [0, 0.275 * scale, 0.45 * scale])
+            linear_velocity['Medium']    = fuzz.trimf(linear_velocity.universe, [0.25 * scale, 0.4 * scale, 0.625 * scale])
+            linear_velocity['High']      = fuzz.trimf(linear_velocity.universe, [0.4 * scale, 0.625 * scale, 0.8 * scale])
+            linear_velocity['Very_High'] = fuzz.trimf(linear_velocity.universe, [0.625 * scale, 0.7 * scale, 0.9 * scale])
         else:
             lin_vel_max = 1.8
             linear_velocity = ctrl.Consequent(np.arange(0, lin_vel_max + 0.01, 0.01), 'Linear_Velocity')
             scale = lin_vel_max / 0.7  # approximately 2.57
             linear_velocity['Very_Low']  = fuzz.trimf(linear_velocity.universe, [-0.175 * scale, 0, 0.175 * scale])
             linear_velocity['Low']       = fuzz.trimf(linear_velocity.universe, [0, 0.175 * scale, 0.35 * scale])
-            linear_velocity['Medium']    = fuzz.trimf(linear_velocity.universe, [0.175 * scale, 0.35 * scale, 0.525 * scale])
-            linear_velocity['High']      = fuzz.trimf(linear_velocity.universe, [0.35 * scale, 0.525 * scale, 0.7 * scale])
-            linear_velocity['Very_High'] = fuzz.trimf(linear_velocity.universe, [0.525 * scale, 0.7 * scale, 0.7 * scale])
+            linear_velocity['Medium']    = fuzz.trimf(linear_velocity.universe, [0.275 * scale, 0.35 * scale, 0.625 * scale])
+            linear_velocity['High']      = fuzz.trimf(linear_velocity.universe, [0.35 * scale, 0.525 * scale, 0.8 * scale])
+            linear_velocity['Very_High'] = fuzz.trimf(linear_velocity.universe, [0.525 * scale, 0.7 * scale, 0.9 * scale])
         
         obstacle_distance = ctrl.Antecedent(np.arange(0, 4.01, 0.01), 'Obstacle_Distance')
-        obstacle_distance['Very_Near'] = fuzz.trapmf(obstacle_distance.universe, [-0.9, 0, 0, 0.9])
-        obstacle_distance['Near']      = fuzz.trimf(obstacle_distance.universe, [0, 1, 2])
-        obstacle_distance['Midway']    = fuzz.trimf(obstacle_distance.universe, [1, 2, 3])
-        obstacle_distance['Far']       = fuzz.trimf(obstacle_distance.universe, [2, 3, 4])
-        obstacle_distance['Very_Far']  = fuzz.trapmf(obstacle_distance.universe, [3.1, 4, 4, 4.9])
+        obstacle_distance['Very_Near'] = fuzz.trapmf(obstacle_distance.universe, [-0.9, 0, 0, 0.5])
+        obstacle_distance['Near']      = fuzz.trimf(obstacle_distance.universe, [0, 0.5, 1.2])
+        obstacle_distance['Midway']    = fuzz.trimf(obstacle_distance.universe, [1, 1.5, 2.5])
+        obstacle_distance['Far']       = fuzz.trimf(obstacle_distance.universe, [2.5, 4, 5])
+        obstacle_distance['Very_Far']  = fuzz.trapmf(obstacle_distance.universe, [3.1, 4, 4, 6])
+
+        turn_curvature = ctrl.Antecedent(
+            np.arange(0, self.max_turn_curvature + 0.01, 0.01),
+            'Turn_Curvature')
+        curvature_scale = self.max_turn_curvature
+        turn_curvature['Small'] = fuzz.trapmf(
+            turn_curvature.universe,
+            [0, 0, 0.35 * curvature_scale, 0.55 * curvature_scale])
+        turn_curvature['Medium'] = fuzz.trimf(
+            turn_curvature.universe,
+            [0.35 * curvature_scale, 0.60 * curvature_scale, 0.85 * curvature_scale])
+        turn_curvature['Large'] = fuzz.trapmf(
+            turn_curvature.universe,
+            [0.65 * curvature_scale, 0.90 * curvature_scale,
+             curvature_scale, curvature_scale])
         
-        rule1 = ctrl.Rule(obstacle_distance['Very_Near'], linear_velocity['Very_High'])
-        rule2 = ctrl.Rule(obstacle_distance['Near'],      linear_velocity['High'])
+        rule1 = ctrl.Rule(obstacle_distance['Very_Near'], linear_velocity['Very_Low'])
+        rule2 = ctrl.Rule(obstacle_distance['Near'],      linear_velocity['Low'])
         rule3 = ctrl.Rule(obstacle_distance['Midway'],    linear_velocity['Medium'])
-        rule4 = ctrl.Rule(obstacle_distance['Far'],       linear_velocity['Low'])
-        rule5 = ctrl.Rule(obstacle_distance['Very_Far'],  linear_velocity['Very_Low'])
+        rule4 = ctrl.Rule(obstacle_distance['Far'],       linear_velocity['High'])
+        rule5 = ctrl.Rule(obstacle_distance['Very_Far'],  linear_velocity['Very_High'])
+        rule6 = ctrl.Rule(turn_curvature['Medium'],       linear_velocity['Medium'])
+        rule7 = ctrl.Rule(turn_curvature['Large'],        linear_velocity['Low'])
         
-        linear_ctrl = ctrl.ControlSystem([rule1, rule2, rule3, rule4, rule5])
+        linear_ctrl = ctrl.ControlSystem([rule1, rule2, rule3, rule4, rule5, rule6, rule7])
         self.linear_sim = ctrl.ControlSystemSimulation(linear_ctrl)
         
         #  Angular Velocity Fuzzy Controller ---
@@ -537,6 +574,7 @@ class NavigationNode:
         roll, pitch, yaw = t3d.euler_from_quaternion(quat)
         self.current_position = (x, y)
         self.current_heading = math.degrees(yaw)  # 转换为角度制
+        self.update_travel_distance(self.current_position)
 
     # ---------- VFH* ----------
     def vfh_star(self, hb, heading_sector, current_position, current_heading):
@@ -545,6 +583,113 @@ class NavigationNode:
                              heading_sector, self.ds, self.ng,
                              hb, self.threshold, self.robotDim,
                              self.WidevalleyMin, prev)
+
+    def limit_rate(self, target, previous, max_accel, dt):
+        if max_accel <= 0.0 or dt <= 0.0:
+            return target
+        max_delta = max_accel * dt
+        delta = target - previous
+        if delta > max_delta:
+            return previous + max_delta
+        if delta < -max_delta:
+            return previous - max_delta
+        return target
+
+    def apply_acceleration_limits(self, twist):
+        now = rospy.Time.now()
+        if self.last_cmd_time is None:
+            dt = self.cmd_dt
+        else:
+            dt = (now - self.last_cmd_time).to_sec()
+            if dt <= 0.0:
+                dt = self.cmd_dt
+            else:
+                dt = min(dt, self.cmd_dt)
+
+        twist.linear.x = self.limit_rate(
+            twist.linear.x, self.prev_cmd_linear, self.max_linear_accel, dt)
+        twist.angular.z = self.limit_rate(
+            twist.angular.z, self.prev_cmd_angular, self.max_angular_accel, dt)
+
+        self.prev_cmd_linear = twist.linear.x
+        self.prev_cmd_angular = twist.angular.z
+        self.last_cmd_time = now
+        return twist
+
+    def reset_cmd_history(self):
+        self.prev_cmd_linear = 0.0
+        self.prev_cmd_angular = 0.0
+        self.last_cmd_time = None
+
+    def start_run_stats(self):
+        if self.stats_start_time is not None:
+            return
+        self.stats_start_time = rospy.Time.now()
+        self.total_distance = 0.0
+        self.last_distance_position = self.current_position
+        self.stats_recorded = False
+        rospy.loginfo("Navigation statistics started.")
+
+    def update_travel_distance(self, position):
+        if self.stats_start_time is None or self.stats_recorded:
+            return
+        if self.is_distance_to_goal:
+            return
+        if self.last_distance_position is None:
+            self.last_distance_position = position
+            return
+
+        dx = position[0] - self.last_distance_position[0]
+        dy = position[1] - self.last_distance_position[1]
+        step_distance = math.hypot(dx, dy)
+        if math.isfinite(step_distance):
+            self.total_distance += step_distance
+            self.last_distance_position = position
+
+    def get_next_experiment_index(self):
+        if not os.path.exists(self.stats_file):
+            return 1
+
+        experiment_count = 0
+        with open(self.stats_file, 'r', encoding='utf-8') as record_file:
+            for line in record_file:
+                line = line.strip()
+                if line.startswith('第') and '次实验' in line:
+                    experiment_count += 1
+        return experiment_count + 1
+
+    def finish_run_stats(self, reason='shutdown'):
+        if self.stats_start_time is None or self.stats_recorded:
+            return
+
+        self.update_travel_distance(self.current_position)
+        self.stats_end_time = rospy.Time.now()
+        elapsed_time = (self.stats_end_time - self.stats_start_time).to_sec()
+        if elapsed_time < 0.0:
+            elapsed_time = 0.0
+        average_speed = self.total_distance / elapsed_time if elapsed_time > 0.0 else 0.0
+
+        stats_dir = os.path.dirname(self.stats_file)
+        if stats_dir:
+            os.makedirs(stats_dir, exist_ok=True)
+        experiment_index = self.get_next_experiment_index()
+        record_line = (
+            "第%d次实验 行驶里程: %.3f m 行驶时间: %.3f s 平均速度: %.3f m/s\n" %
+            (experiment_index, self.total_distance, elapsed_time, average_speed))
+        with open(self.stats_file, 'a', encoding='utf-8') as record_file:
+            record_file.write(record_line)
+
+        self.stats_recorded = True
+        rospy.loginfo(
+            "Navigation statistics saved to %s: duration=%.3fs, distance=%.3fm, average_speed=%.3fm/s",
+            self.stats_file, elapsed_time, self.total_distance, average_speed)
+
+    def estimate_turn_curvature(self, heading_sector, lookahead_distance):
+        lookahead_distance = max(float(lookahead_distance), 0.05)
+        relative_angle = math.radians(
+            self._sector_to_relative_angle(heading_sector, self.vfh_sector_count))
+        curvature = abs(2.0 * math.sin(relative_angle) / lookahead_distance)
+        return min(curvature, self.max_turn_curvature)
 
     def run(self):
         rate = rospy.Rate(10)
@@ -555,6 +700,8 @@ class NavigationNode:
                 self.is_distance_to_goal is True ):   
                 rate.sleep()
                 continue
+
+            self.start_run_stats()
 
             # 动态获取前向跟踪目标点
             lookahead_target = self.get_lookahead_target()
@@ -582,6 +729,8 @@ class NavigationNode:
                 rospy.loginfo("Reached goal within %.2f m, stopping.", self.goal_tolerance)
                 twist = Twist()
                 self.cmd_vel_pub.publish(twist)
+                self.reset_cmd_history()
+                self.finish_run_stats(reason='goal_reached')
                 self.is_distance_to_goal = True
                 self.goal = None
                 self.target_absolute_position = None
@@ -594,13 +743,22 @@ class NavigationNode:
             if lookahead_distance < 0.2:
                 rospy.loginfo("Near lookahead target, but not yet at goal.")
             
-            # 下面 VFH*、模糊控制、安全泡泡等代码完全不动
+            # VFH*、模糊控制、安全泡泡
             m  = calcDanger(self.processed_lidar_ranges, self.max_range)
             # rospy.loginfo(f"VFH")
             h  = calc_h(m, self.sector_size, self.vfh_sector_count)
             hp = calc_hp(h, self.filter_width)
             hb = calc_Hb(h, self.threshold)
             valleys, _ = find_valleys(hb, self.WidevalleyMin, self.robotDim)
+            num_beams = len(self.processed_lidar_ranges)
+            center_index = num_beams // 2
+            front_indices = slice(max(0, center_index - 60),
+                                  min(num_beams, center_index + 61))
+            front_readings = self.processed_lidar_ranges[front_indices]
+            obstacle_distance = self.max_range
+            if len(front_readings) > 0:
+                obstacle_distance = float(np.min(front_readings))
+            obstacle_distance = min(max(obstacle_distance, 0.0), self.max_range)
             heading_sector = calc_Target(self.target_absolute_position,
                                          self.current_position, self.current_heading,
                                          self.vfh_sector_count)
@@ -614,10 +772,10 @@ class NavigationNode:
             self.prev_heading = smoothed_heading
             smooth_angle = -((heading_sector - 1) * (270.0 / 89.0) - 135.0)
             # rospy.loginfo(f"!!!")
-            avg_val = np.min(h[35:55])
-            if avg_val > self.max_range:
-                avg_val = self.max_range
-            self.linear_sim.input['Obstacle_Distance'] = avg_val
+            turn_curvature = self.estimate_turn_curvature(
+                smoothed_heading, lookahead_distance)
+            self.linear_sim.input['Obstacle_Distance'] = obstacle_distance
+            self.linear_sim.input['Turn_Curvature'] = turn_curvature
             self.linear_sim.compute()
             lin_vel = self.linear_sim.output['Linear_Velocity']
 
@@ -630,11 +788,6 @@ class NavigationNode:
             twist.angular.z = ang_vel
             # rospy.loginfo(f"计算速度")
             # Clear-Path Override & Safety Bubble 保持原样
-            num_beams = len(self.processed_lidar_ranges)
-            center_index = num_beams // 2
-            front_indices = slice(max(0, center_index - 60),
-                                  min(num_beams, center_index + 61))
-            front_readings = self.processed_lidar_ranges[front_indices]
             # if (np.all(front_readings >= self.max_range) and
             #     abs(smoothed_heading - heading_sector) < 5):
             #     twist.linear.x = 0.5
@@ -688,6 +841,7 @@ class NavigationNode:
                 self.publish_vfh_markers(h, hp, hb, valleys,
                                         heading_sector, smoothed_heading,
                                         self.target_absolute_position)
+            twist = self.apply_acceleration_limits(twist)
             self.cmd_vel_pub.publish(twist)
             rate.sleep()
 

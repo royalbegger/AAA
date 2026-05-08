@@ -14,7 +14,7 @@ public:
         // 未知区域衰减参数
         pnh.param<double>("unknown_decay_factor", unknown_decay_factor_, 0.8);
         pnh.param<int>("unknown_decay_offset", unknown_decay_offset_, 0);
-        pnh.param<double>("obstacle_inflation_factor", obstacle_inflation_factor_, 1.2);
+        pnh.param<double>("obstacle_inflation_factor", obstacle_inflation_factor_, 1);
         // 确保衰减因子在 (0,1] 范围内
         if (unknown_decay_factor_ <= 0.0) unknown_decay_factor_ = 0.1;
         if (unknown_decay_factor_ > 1.0) unknown_decay_factor_ = 1.0;
@@ -195,7 +195,7 @@ private:
         esdf.header = map->header;
         esdf.info = map->info;
         esdf.data.resize(W * H);
-        const float D_MAX = 1; // 最大有效距离
+        const float D_MAX = 1.3; // 最大有效距离
         for (int i = 0; i < W * H; i++)
         {
             int8_t value;

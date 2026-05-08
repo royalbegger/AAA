@@ -44,7 +44,7 @@ def calcDanger(lidar, maxRange):
     return m
 
 
-def calc_h(m, sector_size):
+def calc_h(m, sector_size, sector_count=None):
     """
     按扇区聚合危险度，生成一维扇区直方图。
 
@@ -54,16 +54,19 @@ def calc_h(m, sector_size):
     Args:
         m: `calcDanger` 输出的危险度数组。
         sector_size: 每个扇区包含的激光束数量。
+        sector_count: 可选，期望输出的扇区数量。未设置时根据输入长度自动计算。
 
     Returns:
         numpy.ndarray: 扇区危险度直方图。
     """
     m = np.array(m)
-    sectors = len(m) // sector_size
+    sectors = len(m) // sector_size if sector_count is None else int(sector_count)
     h = np.zeros(sectors)
     for i in range(sectors):
         start = i * sector_size
         block = m[start:start + sector_size]
+        if len(block) == 0:
+            break
         h[i] = np.sum(block) / sector_size
     return h
 
@@ -153,7 +156,7 @@ def find_valleys(Hb, threshold, robotW):
     return passable, sectToClear
 
 
-def calc_Target(targetPos, currentPos, currentHeading):
+def calc_Target(targetPos, currentPos, currentHeading, sector_count=90):
     """
     将全局目标点映射为局部 VFH 扇区编号。
 
@@ -164,6 +167,7 @@ def calc_Target(targetPos, currentPos, currentHeading):
         targetPos: 目标点世界坐标 `(x, y)`。
         currentPos: 机器人当前世界坐标 `(x, y)`。
         currentHeading: 当前航向角，单位为度。
+        sector_count: VFH 直方图扇区数量。
 
     Returns:
         int: 映射后的目标扇区编号，范围约为 1 到 90。
@@ -201,7 +205,8 @@ def calc_Target(targetPos, currentPos, currentHeading):
         Th = -135
     elif Th > 135:
         Th = 135
-    Th_s = round(((Th + 135) * 89 / 270) + 1)
+    sector_count = max(2, int(sector_count))
+    Th_s = round(((Th + 135) * (sector_count - 1) / 270) + 1)
     return Th_s
 
 
@@ -429,4 +434,3 @@ def vfh_star_full(currentPos, currentHeading, heading_sector, ds, ng, hb, thresh
     #     return best_node.action
     # else:
     #     return heading_sector
-

@@ -91,10 +91,12 @@ AStarPlanner::AStarPlanner() :
     nh_.param("cost_threshold", cost_threshold_, 50.0);
     nh_.param("unknown_cost", unknown_cost_, 40.0);
     nh_.param("use_diagonal_movement", use_diagonal_movement_, true);
+    nh_.param("astar_search_step", astar_search_step_, 1);
     nh_.param("robot_base_frame", robot_base_frame_, std::string("base_link"));
     nh_.param("global_frame", global_frame_, std::string("map"));
     double planning_frequency;
     nh_.param("planning_frequency", planning_frequency, 2.0);
+    astar_search_step_ = std::max(1, astar_search_step_);
 
     // 路径平滑参数
     nh_.param("enable_path_smoothing", enable_path_smoothing_, true);
@@ -149,6 +151,7 @@ AStarPlanner::AStarPlanner() :
     ROS_INFO("  - Goal from rviz: /move_base_simple/goal");
     ROS_INFO("  - Robot pose via TF: %s -> %s", global_frame_.c_str(), robot_base_frame_.c_str());
     ROS_INFO("Cost threshold: %.1f, Unknown cost: %.1f", cost_threshold_, unknown_cost_);
+    ROS_INFO("A* search step: %d map cell(s) per expansion", astar_search_step_);
     ROS_INFO("Path smoothing: %s (kernel=%d, num_scale=%d, sigma=%.2f, min_points=%d, downsample_step=%d)",
              enable_path_smoothing_ ? "enabled" : "disabled",
              smoothing_kernel_size_, smoothing_num_scale_, smoothing_sigma_,
@@ -527,6 +530,35 @@ bool AStarPlanner::checkCollision(int center_x, int center_y)
     return false;  // 无碰撞
 }
 
+bool AStarPlanner::isSegmentTraversable(const AStarNode& from, const AStarNode& to)
+{
+    int dx = to.x - from.x;
+    int dy = to.y - from.y;
+    int steps = std::max(std::abs(dx), std::abs(dy));
+
+    if (steps == 0) {
+        return !checkCollision(from.x, from.y);
+    }
+
+    int last_x = from.x;
+    int last_y = from.y;
+    for (int i = 1; i <= steps; ++i) {
+        int check_x = from.x + static_cast<int>(std::round(dx * i / static_cast<double>(steps)));
+        int check_y = from.y + static_cast<int>(std::round(dy * i / static_cast<double>(steps)));
+        if (check_x == last_x && check_y == last_y) {
+            continue;
+        }
+
+        if (checkCollision(check_x, check_y)) {
+            return false;
+        }
+        last_x = check_x;
+        last_y = check_y;
+    }
+
+    return true;
+}
+
 // bool AStarPlanner::isValidCell(int x, int y)
 // {
 //     // 检查边界
@@ -590,12 +622,7 @@ double AStarPlanner::calculateMoveCost(const AStarNode& from, const AStarNode& t
     double dx = std::abs(from.x - to.x);
     double dy = std::abs(from.y - to.y);
     
-    double base_cost;
-    if (dx == 1 && dy == 1) {
-        base_cost = 1.414; // 对角线移动
-    } else {
-        base_cost = 1.0; // 水平或垂直移动
-    }
+    double base_cost = std::sqrt(dx * dx + dy * dy);
     
     // 考虑地图代价
     int index = to.y * costmap_.info.width + to.x;
@@ -658,7 +685,7 @@ std::vector<AStarNode> AStarPlanner::findPath(const AStarNode& start, const ASta
         }
         
         // 检查邻居
-        auto neighbors = getNeighbors(current);
+        auto neighbors = getNeighbors(current, goal);
         
         for (const auto& neighbor : neighbors) {
             if (closed_set.find(neighbor) != closed_set.end()) {
@@ -711,10 +738,22 @@ std::vector<AStarNode> AStarPlanner::reconstructPath(AStarNode* goal_node)
     return path;
 }
 
-// 获取当前节点的邻居（8方向或4方向，取决于 use_diagonal_movement_）
-std::vector<AStarNode> AStarPlanner::getNeighbors(const AStarNode& current)
+// 获取当前节点的邻居（按 astar_search_step_ 降低搜索分辨率）
+std::vector<AStarNode> AStarPlanner::getNeighbors(const AStarNode& current, const AStarNode& goal)
 {
     std::vector<AStarNode> neighbors;
+    const int step = std::max(1, astar_search_step_);
+
+    // 粗网格扩展可能无法刚好落在目标栅格，最后一段允许直接连接真实目标。
+    int goal_dx = goal.x - current.x;
+    int goal_dy = goal.y - current.y;
+    bool goal_added = false;
+    if ((goal_dx != 0 || goal_dy != 0) &&
+        std::max(std::abs(goal_dx), std::abs(goal_dy)) <= step &&
+        isSegmentTraversable(current, goal)) {
+        neighbors.emplace_back(goal.x, goal.y);
+        goal_added = true;
+    }
     
     // 4方向（上下左右）+ 可选对角线
     std::vector<std::pair<int, int>> directions;
@@ -731,11 +770,15 @@ std::vector<AStarNode> AStarPlanner::getNeighbors(const AStarNode& current)
     }
     
     for (const auto& dir : directions) {
-        int nx = current.x + dir.first;
-        int ny = current.y + dir.second;
+        int nx = current.x + dir.first * step;
+        int ny = current.y + dir.second * step;
+
+        if (goal_added && nx == goal.x && ny == goal.y) {
+            continue;
+        }
         
-        // 检查有效性和无碰撞
-        if (isValidCell(nx, ny) && !checkCollision(nx, ny)) {
+        // 跨栅格扩展时沿线段采样，避免直接跳过障碍物。
+        if (isSegmentTraversable(current, AStarNode(nx, ny))) {
             neighbors.emplace_back(nx, ny);
         }
     }
