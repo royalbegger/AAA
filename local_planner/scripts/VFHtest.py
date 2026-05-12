@@ -45,15 +45,17 @@ class NavigationNode:
         # 其余参数保持原样
         self.target_absolute_position = None
         self.goal_tolerance = rospy.get_param('~goal_tolerance', 0.4)
-        self.max_linear_accel = rospy.get_param('~max_linear_accel', 0.6)    # m/s^2
-        self.max_angular_accel = rospy.get_param('~max_angular_accel', 1.5)  # rad/s^2
+        self.max_linear_accel = rospy.get_param('~max_linear_accel', 1)    # m/s^2
+        self.max_angular_accel = rospy.get_param('~max_angular_accel', 2.5)  # rad/s^2
         self.cmd_dt = rospy.get_param('~cmd_dt', 0.1)
         self.prev_cmd_linear = 0.0
         self.prev_cmd_angular = 0.0
         self.last_cmd_time = None
         self.max_range = 4.0
         self.sector_size = 8
-        self.vfh_sector_count = 90
+        self.vfh_fov_deg = 270.0
+        self.vfh_sector_count = int(rospy.get_param('~vfh_sector_count', 120))
+        self.vfh_sector_width_deg = self.vfh_fov_deg / float(self.vfh_sector_count)
         self.filter_width = 3
         self.threshold = 0.9
         self.robotDim = 0.6
@@ -73,18 +75,19 @@ class NavigationNode:
         # 从全局路径中跟踪1米前方的点
         self.global_path = None
         self.lookahead_distance = 0.8  # 1米前向距离
-        self.max_turn_curvature = max(rospy.get_param('~max_turn_curvature', 3.0), 0.1)
+        self.max_turn_curvature = max(rospy.get_param('~max_turn_curvature', 1.0), 0.1)
         self.goal = None  # 等待RViz设置或从路径获取
         self.init_fuzzy_controllers()
         self.prev_heading = None
         self.alpha = 1.0
         self.processed_lidar_ranges = None
+        self.processed_lidar_angles_deg = None
         self.odom_data = False
         self.viz_pub = rospy.Publisher('/vfh/debug/markers', MarkerArray, queue_size=1)
         self.lookahead_target_pub = rospy.Publisher('/vfh/lookahead_target', Marker, queue_size=1)  # 追踪点可视化
         self.id_cnt  = 0          # 全局 id 计数器，防止重名
 
-        # 运行统计：时间、行驶里程、平均速度
+        # 运行统计：时间、行驶里程、平均速度、最大速度
         default_stats_file = os.path.abspath(
             os.path.join(os.path.dirname(__file__), '..', 'test_record.txt'))
         self.stats_file = os.path.expanduser(
@@ -92,7 +95,9 @@ class NavigationNode:
         self.stats_start_time = None
         self.stats_end_time = None
         self.total_distance = 0.0
+        self.max_travel_speed = 0.0
         self.last_distance_position = None
+        self.last_distance_time = None
         self.stats_recorded = False
         rospy.on_shutdown(self.finish_run_stats)
 
@@ -161,17 +166,21 @@ class NavigationNode:
         if len(valleys) > 0:
             for valley in valleys:
                 start = float(valley[0])
-                end   = float(valley[1])
-                ang0 = math.radians(self._sector_to_world_angle(start, n_sec))
-                ang1 = math.radians(self._sector_to_world_angle(end, n_sec))
-                m_arr.markers.append(
-                    self._filled_wedge_marker(robot_x, robot_y,
-                                    ang0, ang1,
-                                    1.35, self.c_green_fill))
-                m_arr.markers.append(
-                    self._wedge_marker(robot_x, robot_y,
-                                    ang0, ang1,
-                                    1.35, self.c_green, 0.12))
+                end = float(valley[1])
+                valley_segments = [(start, end)]
+                if end > n_sec:
+                    valley_segments = [(start, float(n_sec)), (1.0, end - n_sec)]
+                for seg_start, seg_end in valley_segments:
+                    ang0 = math.radians(self._sector_to_world_angle(seg_start, n_sec))
+                    ang1 = math.radians(self._sector_to_world_angle(seg_end, n_sec))
+                    m_arr.markers.append(
+                        self._filled_wedge_marker(robot_x, robot_y,
+                                        ang0, ang1,
+                                        1.35, self.c_green_fill))
+                    m_arr.markers.append(
+                        self._wedge_marker(robot_x, robot_y,
+                                        ang0, ang1,
+                                        1.35, self.c_green, 0.12))
 
         # 4) 目标方向 —— 黄色细线
         if target_position is not None:
@@ -216,7 +225,8 @@ class NavigationNode:
         if n_sec <= 1:
             return 0.0
         sector = min(max(float(sector), 1.0), float(n_sec))
-        return 135.0 - (sector - 1.0) * (270.0 / (n_sec - 1.0))
+        return (self.vfh_fov_deg / 2.0 -
+                (sector - 0.5) * (self.vfh_fov_deg / float(n_sec)))
 
     def _sector_to_world_angle(self, sector, n_sec):
         return self.current_heading + self._sector_to_relative_angle(sector, n_sec)
@@ -225,7 +235,8 @@ class NavigationNode:
         if n_sec <= 0:
             return self.current_heading
         boundary = min(max(float(boundary), 0.0), float(n_sec))
-        relative_angle = 135.0 - boundary * (270.0 / float(n_sec))
+        relative_angle = (self.vfh_fov_deg / 2.0 -
+                          boundary * (self.vfh_fov_deg / float(n_sec)))
         return self.current_heading + relative_angle
 
     def _format_sector_label(self, sector):
@@ -441,6 +452,7 @@ class NavigationNode:
             lin_vel_max = 0.9
             linear_velocity = ctrl.Consequent(np.arange(0, lin_vel_max + 0.01, 0.01), 'Linear_Velocity')
             scale = 2.0
+            linear_velocity['zero']  = fuzz.trimf(linear_velocity.universe, [0,0,0])
             linear_velocity['Very_Low']  = fuzz.trimf(linear_velocity.universe, [-0.175 * scale, 0.2, 0.375 * scale])
             linear_velocity['Low']       = fuzz.trimf(linear_velocity.universe, [0, 0.275 * scale, 0.45 * scale])
             linear_velocity['Medium']    = fuzz.trimf(linear_velocity.universe, [0.25 * scale, 0.4 * scale, 0.625 * scale])
@@ -450,6 +462,7 @@ class NavigationNode:
             lin_vel_max = 1.8
             linear_velocity = ctrl.Consequent(np.arange(0, lin_vel_max + 0.01, 0.01), 'Linear_Velocity')
             scale = lin_vel_max / 0.7  # approximately 2.57
+            linear_velocity['zero']  = fuzz.trimf(linear_velocity.universe, [0, 0, 0])
             linear_velocity['Very_Low']  = fuzz.trimf(linear_velocity.universe, [-0.175 * scale, 0, 0.175 * scale])
             linear_velocity['Low']       = fuzz.trimf(linear_velocity.universe, [0, 0.175 * scale, 0.35 * scale])
             linear_velocity['Medium']    = fuzz.trimf(linear_velocity.universe, [0.275 * scale, 0.35 * scale, 0.625 * scale])
@@ -469,39 +482,61 @@ class NavigationNode:
         curvature_scale = self.max_turn_curvature
         turn_curvature['Small'] = fuzz.trapmf(
             turn_curvature.universe,
-            [0, 0, 0.35 * curvature_scale, 0.55 * curvature_scale])
+            [0, 0, 0.15 * curvature_scale, 0.35 * curvature_scale])
         turn_curvature['Medium'] = fuzz.trimf(
             turn_curvature.universe,
-            [0.35 * curvature_scale, 0.60 * curvature_scale, 0.85 * curvature_scale])
-        turn_curvature['Large'] = fuzz.trapmf(
+            [0.25 * curvature_scale, 0.5 * curvature_scale, 0.75 * curvature_scale])
+        turn_curvature['Large'] = fuzz.trimf(
             turn_curvature.universe,
-            [0.65 * curvature_scale, 0.90 * curvature_scale,
-             curvature_scale, curvature_scale])
-        
-        rule1 = ctrl.Rule(obstacle_distance['Very_Near'], linear_velocity['Very_Low'])
-        rule2 = ctrl.Rule(obstacle_distance['Near'],      linear_velocity['Low'])
-        rule3 = ctrl.Rule(obstacle_distance['Midway'],    linear_velocity['Medium'])
-        rule4 = ctrl.Rule(obstacle_distance['Far'],       linear_velocity['High'])
-        rule5 = ctrl.Rule(obstacle_distance['Very_Far'],  linear_velocity['Very_High'])
-        rule6 = ctrl.Rule(turn_curvature['Medium'],       linear_velocity['Medium'])
-        rule7 = ctrl.Rule(turn_curvature['Large'],        linear_velocity['Low'])
-        
-        linear_ctrl = ctrl.ControlSystem([rule1, rule2, rule3, rule4, rule5, rule6, rule7])
+            [0.7 * curvature_scale, 0.8 * curvature_scale,
+            0.9*curvature_scale])
+        turn_curvature['Very_Large'] = fuzz.trapmf(
+            turn_curvature.universe,
+            [0.8 * curvature_scale, 1.0 * curvature_scale,
+                1.2* curvature_scale, 1.5*curvature_scale])
+
+        normal_turn = turn_curvature['Small'] | turn_curvature['Medium']
+        rule1 = ctrl.Rule(turn_curvature['Very_Large'], linear_velocity['zero'])
+        rule2 = ctrl.Rule(turn_curvature['Large'],      linear_velocity['Very_Low'])
+        rule3 = ctrl.Rule(obstacle_distance['Very_Near'] & normal_turn, linear_velocity['Very_Low'])
+        rule4 = ctrl.Rule(obstacle_distance['Near']      & normal_turn, linear_velocity['Low'])
+        rule5 = ctrl.Rule(obstacle_distance['Midway']    & normal_turn, linear_velocity['Medium'])
+        rule6 = ctrl.Rule(obstacle_distance['Far']       & normal_turn, linear_velocity['High'])
+        rule7 = ctrl.Rule(obstacle_distance['Very_Far']  & turn_curvature['Small'],  linear_velocity['Very_High'])
+        rule8 = ctrl.Rule(obstacle_distance['Very_Far']  & turn_curvature['Medium'], linear_velocity['High'])
+
+        linear_ctrl = ctrl.ControlSystem([rule1, rule2, rule3, rule4, rule5, rule6, rule7, rule8])
         self.linear_sim = ctrl.ControlSystemSimulation(linear_ctrl)
         
         #  Angular Velocity Fuzzy Controller ---
-        angular_input = ctrl.Antecedent(np.arange(0, 90.01, 0.1), 'Angular_Input')
-        angular_input['very_left']  = fuzz.trapmf(angular_input.universe, [-20.25, -2.25, 0, 22.5])
-        angular_input['left']       = fuzz.trimf(angular_input.universe, [0, 22.5, 45])
-        angular_input['zero']       = fuzz.trimf(angular_input.universe, [22.5, 45, 67.5])
-        angular_input['right']      = fuzz.trimf(angular_input.universe, [45, 67.5, 90])
-        angular_input['very_right'] = fuzz.trapmf(angular_input.universe, [67.5, 90, 90, 110.2])
+        sector_min = 1.0
+        sector_max = float(self.vfh_sector_count)
+        sector_span = sector_max - sector_min
+        sector_center = (sector_min + sector_max) / 2.0
+        angular_input = ctrl.Antecedent(
+            np.arange(sector_min, sector_max + 0.01, 0.1), 'Angular_Input')
+        angular_input['very_left'] = fuzz.trapmf(
+            angular_input.universe,
+            [sector_min, sector_min, sector_min, sector_min + 0.25 * sector_span])
+        angular_input['left'] = fuzz.trimf(
+            angular_input.universe,
+            [sector_min, sector_min + 0.25 * sector_span, sector_center])
+        angular_input['zero'] = fuzz.trimf(
+            angular_input.universe,
+            [sector_min + 0.375 * sector_span, sector_center,
+             sector_min + 0.625 * sector_span])
+        angular_input['right'] = fuzz.trimf(
+            angular_input.universe,
+            [sector_center, sector_min + 0.75 * sector_span, sector_max])
+        angular_input['very_right'] = fuzz.trapmf(
+            angular_input.universe,
+            [sector_min + 0.75 * sector_span, sector_max, sector_max, sector_max])
         
         if self.environment_mode == 'static':
             # Static environment: Universe from -π to π.
             angular_output = ctrl.Consequent(np.arange(-np.pi, np.pi + 0.01, 0.01), 'Angular_Output')
             # Use a scaling factor based on the old static max (2.5) to the new max (π)
-            scale_static = np.pi / 2.5  # ~1.25664
+            scale_static = np.pi / 3.5  # ~1.25664
             angular_output['very_neg'] = fuzz.trapmf(angular_output.universe, 
                                                      [-2.5 * scale_static, -2.5 * scale_static, -2.5 * scale_static, -1.25 * scale_static])
             angular_output['neg']      = fuzz.trimf(angular_output.universe, 
@@ -515,7 +550,7 @@ class NavigationNode:
         else:
             # Dynamic environment: Universe from -3.5 to 3.5.
             angular_output = ctrl.Consequent(np.arange(-3.5, 3.5 + 0.01, 0.01), 'Angular_Output')
-            scale_dynamic = 3.5 / 3.0  # ~1.16667
+            scale_dynamic = 3.5 / 4.0  # ~1.16667
             angular_output['very_neg'] = fuzz.trapmf(angular_output.universe, 
                                                      [-3.0 * scale_dynamic, -3.0 * scale_dynamic, -3.0 * scale_dynamic, -1.5 * scale_dynamic])
             angular_output['neg']      = fuzz.trimf(angular_output.universe, 
@@ -538,11 +573,42 @@ class NavigationNode:
 
     # ---------- sensor callbacks ----------
     def lidar_callback(self, msg):
-        ranges = np.array(msg.ranges)
-        ranges = np.flip(ranges)
+        ranges = np.asarray(msg.ranges, dtype=float)
+        angles = msg.angle_min + np.arange(len(ranges)) * msg.angle_increment
         ranges[np.isnan(ranges)] = self.max_range
+        ranges[~np.isfinite(ranges)] = self.max_range
         ranges[ranges > self.max_range] = self.max_range
         self.processed_lidar_ranges = ranges
+        self.processed_lidar_angles_deg = (
+            np.degrees(angles) + 180.0) % 360.0 - 180.0
+
+    def build_vfh_histogram(self):
+        danger = calcDanger(self.processed_lidar_ranges, self.max_range)
+        if self.processed_lidar_angles_deg is None:
+            return calc_h(danger, self.sector_size, self.vfh_sector_count)
+
+        sums = np.zeros(self.vfh_sector_count)
+        counts = np.zeros(self.vfh_sector_count)
+        half_fov = self.vfh_fov_deg / 2.0
+        in_fov = np.abs(self.processed_lidar_angles_deg) <= half_fov
+        if not np.any(in_fov):
+            return sums
+        sector_indices = np.floor(
+            (half_fov - self.processed_lidar_angles_deg[in_fov]) /
+            self.vfh_sector_width_deg).astype(int)
+        sector_indices = np.clip(sector_indices, 0, self.vfh_sector_count - 1)
+        np.add.at(sums, sector_indices, danger[in_fov])
+        np.add.at(counts, sector_indices, 1)
+        h = np.zeros(self.vfh_sector_count)
+        np.divide(sums, counts, out=h, where=counts > 0)
+        return h
+
+    def get_front_readings(self, half_angle_deg=30.0):
+        if (self.processed_lidar_ranges is None or
+            self.processed_lidar_angles_deg is None):
+            return np.array([])
+        front_mask = np.abs(self.processed_lidar_angles_deg) <= half_angle_deg
+        return self.processed_lidar_ranges[front_mask]
 
     # def odom_callback(self, msg):
     #     self.odom_data = msg
@@ -582,7 +648,8 @@ class NavigationNode:
         return vfh_star_full(current_position, current_heading,
                              heading_sector, self.ds, self.ng,
                              hb, self.threshold, self.robotDim,
-                             self.WidevalleyMin, prev)
+                             self.WidevalleyMin, prev,
+                             self.vfh_sector_width_deg)
 
     def limit_rate(self, target, previous, max_accel, dt):
         if max_accel <= 0.0 or dt <= 0.0:
@@ -595,7 +662,7 @@ class NavigationNode:
             return previous - max_delta
         return target
 
-    def apply_acceleration_limits(self, twist):
+    def apply_acceleration_limits(self, twist, force_zero_linear=False):
         now = rospy.Time.now()
         if self.last_cmd_time is None:
             dt = self.cmd_dt
@@ -606,8 +673,11 @@ class NavigationNode:
             else:
                 dt = min(dt, self.cmd_dt)
 
-        twist.linear.x = self.limit_rate(
-            twist.linear.x, self.prev_cmd_linear, self.max_linear_accel, dt)
+        if force_zero_linear:
+            twist.linear.x = 0.0
+        else:
+            twist.linear.x = self.limit_rate(
+                twist.linear.x, self.prev_cmd_linear, self.max_linear_accel, dt)
         twist.angular.z = self.limit_rate(
             twist.angular.z, self.prev_cmd_angular, self.max_angular_accel, dt)
 
@@ -626,7 +696,9 @@ class NavigationNode:
             return
         self.stats_start_time = rospy.Time.now()
         self.total_distance = 0.0
+        self.max_travel_speed = 0.0
         self.last_distance_position = self.current_position
+        self.last_distance_time = self.stats_start_time
         self.stats_recorded = False
         rospy.loginfo("Navigation statistics started.")
 
@@ -635,8 +707,10 @@ class NavigationNode:
             return
         if self.is_distance_to_goal:
             return
+        current_time = rospy.Time.now()
         if self.last_distance_position is None:
             self.last_distance_position = position
+            self.last_distance_time = current_time
             return
 
         dx = position[0] - self.last_distance_position[0]
@@ -644,7 +718,15 @@ class NavigationNode:
         step_distance = math.hypot(dx, dy)
         if math.isfinite(step_distance):
             self.total_distance += step_distance
+            if self.last_distance_time is not None:
+                step_time = (current_time - self.last_distance_time).to_sec()
+                if step_time > 0.0:
+                    step_speed = step_distance / step_time
+                    if math.isfinite(step_speed):
+                        self.max_travel_speed = max(
+                            self.max_travel_speed, step_speed)
             self.last_distance_position = position
+            self.last_distance_time = current_time
 
     def get_next_experiment_index(self):
         if not os.path.exists(self.stats_file):
@@ -674,15 +756,17 @@ class NavigationNode:
             os.makedirs(stats_dir, exist_ok=True)
         experiment_index = self.get_next_experiment_index()
         record_line = (
-            "第%d次实验 行驶里程: %.3f m 行驶时间: %.3f s 平均速度: %.3f m/s\n" %
-            (experiment_index, self.total_distance, elapsed_time, average_speed))
+            "第%d次实验 行驶里程: %.3f m 行驶时间: %.3f s 平均速度: %.3f m/s 最大行驶速度: %.3f m/s\n" %
+            (experiment_index, self.total_distance, elapsed_time,
+             average_speed, self.max_travel_speed))
         with open(self.stats_file, 'a', encoding='utf-8') as record_file:
             record_file.write(record_line)
 
         self.stats_recorded = True
         rospy.loginfo(
-            "Navigation statistics saved to %s: duration=%.3fs, distance=%.3fm, average_speed=%.3fm/s",
-            self.stats_file, elapsed_time, self.total_distance, average_speed)
+            "Navigation statistics saved to %s: duration=%.3fs, distance=%.3fm, average_speed=%.3fm/s, max_speed=%.3fm/s",
+            self.stats_file, elapsed_time, self.total_distance,
+            average_speed, self.max_travel_speed)
 
     def estimate_turn_curvature(self, heading_sector, lookahead_distance):
         lookahead_distance = max(float(lookahead_distance), 0.05)
@@ -695,6 +779,7 @@ class NavigationNode:
         rate = rospy.Rate(10)
         while not rospy.is_shutdown():
             if (self.processed_lidar_ranges is None or
+                self.processed_lidar_angles_deg is None or
                 self.odom_data is False or
                 self.global_path is None or
                 self.is_distance_to_goal is True ):   
@@ -744,25 +829,21 @@ class NavigationNode:
                 rospy.loginfo("Near lookahead target, but not yet at goal.")
             
             # VFH*、模糊控制、安全泡泡
-            m  = calcDanger(self.processed_lidar_ranges, self.max_range)
+            h = self.build_vfh_histogram()
             # rospy.loginfo(f"VFH")
-            h  = calc_h(m, self.sector_size, self.vfh_sector_count)
             hp = calc_hp(h, self.filter_width)
             hb = calc_Hb(h, self.threshold)
-            valleys, _ = find_valleys(hb, self.WidevalleyMin, self.robotDim)
-            num_beams = len(self.processed_lidar_ranges)
-            center_index = num_beams // 2
-            front_indices = slice(max(0, center_index - 60),
-                                  min(num_beams, center_index + 61))
-            front_readings = self.processed_lidar_ranges[front_indices]
+            valleys, _ = find_valleys(
+                hb, self.WidevalleyMin, self.robotDim,
+                self.vfh_sector_width_deg)
+            front_readings = self.get_front_readings()
             obstacle_distance = self.max_range
             if len(front_readings) > 0:
                 obstacle_distance = float(np.min(front_readings))
             obstacle_distance = min(max(obstacle_distance, 0.0), self.max_range)
             heading_sector = calc_Target(self.target_absolute_position,
                                          self.current_position, self.current_heading,
-                                         self.vfh_sector_count)
-            sector_angle = -((heading_sector - 1) * (270.0 / 89.0) - 135.0)
+                                         self.vfh_sector_count, self.vfh_fov_deg)
             candidate_heading = self.vfh_star(hb, heading_sector,
                                               self.current_position, self.current_heading)
             if self.prev_heading is None:
@@ -770,12 +851,12 @@ class NavigationNode:
             else:
                 smoothed_heading = self.alpha * candidate_heading + (1 - self.alpha) * self.prev_heading
             self.prev_heading = smoothed_heading
-            smooth_angle = -((heading_sector - 1) * (270.0 / 89.0) - 135.0)
             # rospy.loginfo(f"!!!")
             turn_curvature = self.estimate_turn_curvature(
                 smoothed_heading, lookahead_distance)
             self.linear_sim.input['Obstacle_Distance'] = obstacle_distance
             self.linear_sim.input['Turn_Curvature'] = turn_curvature
+            # rospy.loginfo(f"Turn_Curvature: {turn_curvature}")
             self.linear_sim.compute()
             lin_vel = self.linear_sim.output['Linear_Velocity']
 
@@ -786,56 +867,6 @@ class NavigationNode:
             twist = Twist()
             twist.linear.x  = lin_vel
             twist.angular.z = ang_vel
-            # rospy.loginfo(f"计算速度")
-            # Clear-Path Override & Safety Bubble 保持原样
-            # if (np.all(front_readings >= self.max_range) and
-            #     abs(smoothed_heading - heading_sector) < 5):
-            #     twist.linear.x = 0.5
-
-            # half_width = self.safety_bubble_width // 2
-            # start_idx = max(0, center_index - half_width)
-            # end_idx   = min(num_beams, center_index + half_width + 1)
-            # safety_readings = self.processed_lidar_ranges[start_idx:end_idx]
-            # if np.any(safety_readings < self.safety_distance):
-            #     twist.linear.x = 0.0
-            #     mid = len(safety_readings) // 2
-            #     left_clearance  = np.min(safety_readings[:mid]) if mid > 0 else self.max_range
-            #     right_clearance = np.min(safety_readings[mid:]) if mid < len(safety_readings) else self.max_range
-            #     if left_clearance > right_clearance:
-            #         twist.angular.z = 0.5
-            #         twist.linear.x  = -0.4
-            #     else:
-            #         twist.angular.z = -0.5
-            #         twist.linear.x  = -0.4
-            # dx = self.target_absolute_position[0] - self.current_position[0]
-            # dy = self.target_absolute_position[1] - self.current_position[1]
-            
-            # # 计算目标方向的角度（角度制，与current_heading统一）
-            # target_heading_deg = np.degrees(np.arctan2(dy, dx))
-            
-            # # 计算与当前航向的夹角差，并归一化到 [-180, 180]
-            # heading_diff_deg = target_heading_deg - self.current_heading
-            # heading_diff_deg = (heading_diff_deg + 180) % 360 - 180  # 归一化到 [-180, 180]
-            # heading_diff_deg = abs(heading_diff_deg)
-        
-            # rospy.loginfo("[Safety Check] target_heading: %.1f°, current_heading: %.1f°, heading_diff: %.1f°", target_heading_deg, self.current_heading, heading_diff_deg)
-            
-            # if heading_diff_deg > 30.0:
-            #     rospy.logwarn("[Safety Check] Heading diff %.1f° > 60°, performing in-place rotation", heading_diff_deg)
-                
-            #     # 停止前进，原地旋转对准目标
-            #     twist.linear.x = 0.0
-                
-            #     # 根据夹角符号判断转向方向（使用未取绝对值的heading_diff）
-            #     heading_diff_raw = target_heading_deg - self.current_heading
-            #     heading_diff_raw = (heading_diff_raw + 180) % 360 - 180
-                
-            #     if heading_diff_raw > 0:
-            #         twist.angular.z = 1.0
-            #         rospy.loginfo("[Safety Check] Rotating LEFT to target")
-            #     else:
-            #         twist.angular.z = 1.0
-            #         rospy.loginfo("[Safety Check] Rotating RIGHT to target")
             if self.processed_lidar_ranges is not None:
 
                 self.publish_vfh_markers(h, hp, hb, valleys,
